@@ -1,12 +1,4 @@
-import logging
-from datetime import datetime, timedelta
-
-import requests
-
 from odoo import api, fields, models
-from odoo.exceptions import UserError
-
-_logger = logging.getLogger(__name__)
 
 
 class AmazonBackend(models.Model):
@@ -36,16 +28,6 @@ class AmazonBackend(models.Model):
     aws_external_id = fields.Char(string="AWS External ID")
     endpoint = fields.Char(string="SP-API Endpoint")
     test_mode = fields.Boolean()
-    read_only_mode = fields.Boolean(
-        string="Read-Only Mode (Testing)",
-        default=False,
-        help=(
-            "When enabled, all write operations to Amazon (stock updates, "
-            "shipment tracking, etc.) will be logged instead of actually "
-            "submitted. Use this for testing and verification without "
-            "affecting your Amazon account."
-        ),
-    )
     enable_price_sync = fields.Boolean(default=True)
     enable_stock_sync = fields.Boolean(default=True)
     company_id = fields.Many2one(
@@ -89,6 +71,12 @@ class AmazonBackend(models.Model):
     def _refresh_access_token(self):
         """Refresh LWA access token using refresh token"""
         self.ensure_one()
+        from datetime import datetime, timedelta
+
+        import requests
+
+        from odoo.exceptions import UserError
+
         url = self._get_lwa_token_url()
         payload = {
             "grant_type": "refresh_token",
@@ -117,18 +105,24 @@ class AmazonBackend(models.Model):
     def _get_access_token(self):
         """Get valid access token, refreshing if necessary"""
         self.ensure_one()
+        from datetime import datetime
+
         if (
             not self.access_token
             or not self.token_expires_at
             or self.token_expires_at <= datetime.now()
         ):
-            self._refresh_access_token()
+            return self._refresh_access_token()
 
         return self.access_token
 
     def _call_sp_api(self, method, endpoint, params=None, json_data=None):
         """Make authenticated SP-API call"""
         self.ensure_one()
+        import requests
+
+        from odoo.exceptions import UserError
+
         access_token = self._get_access_token()
         url = f"{self._get_sp_api_endpoint()}{endpoint}"
 
@@ -164,6 +158,7 @@ class AmazonBackend(models.Model):
                 "GET",
                 "/sellers/v1/marketplaceParticipations",
             )
+
             if result.get("payload"):
                 return {
                     "type": "ir.actions.client",
@@ -187,127 +182,5 @@ class AmazonBackend(models.Model):
                     "message": str(e),
                     "type": "danger",
                     "sticky": True,
-                },
-            }
-
-        return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {
-                "title": "Connection Failed",
-                "message": "No marketplaces returned by SP-API.",
-                "type": "warning",
-                "sticky": False,
-            },
-        }
-
-    def action_fetch_marketplaces(self):
-        """Fetch marketplaces from SP-API and upsert records.
-
-        Uses ``/sellers/v1/marketplaceParticipations`` to discover the
-        marketplaces this seller participates in, then creates or updates
-        ``amazon.marketplace`` entries linked to this backend.
-        """
-        self.ensure_one()
-
-        result = self._call_sp_api("GET", "/sellers/v1/marketplaceParticipations")
-        payload = result.get("payload") or []
-
-        if not payload:
-            return {
-                "type": "ir.actions.client",
-                "tag": "display_notification",
-                "params": {
-                    "title": "No Marketplaces",
-                    "message": "No marketplace participations returned by SP-API.",
-                    "type": "warning",
-                    "sticky": False,
-                },
-            }
-
-        Marketplace = self.env["amazon.marketplace"]
-        Currency = self.env["res.currency"]
-
-        created = 0
-        updated = 0
-
-        for item in payload:
-            marketplace = item.get("marketplace", {})
-            marketplace_id = marketplace.get("id")
-            if not marketplace_id:
-                continue
-
-            country_code = (marketplace.get("countryCode") or "").upper()
-            currency_code = marketplace.get("defaultCurrencyCode")
-            name = marketplace.get("name") or marketplace_id
-
-            currency = False
-            if currency_code:
-                currency = Currency.search([("name", "=", currency_code)], limit=1)
-
-            vals = {
-                "name": name,
-                "code": country_code,
-                "marketplace_id": marketplace_id,
-                "backend_id": self.id,
-                "country_code": country_code,
-                "region": self.region,
-            }
-            if currency:
-                vals["currency_id"] = currency.id
-
-            # Prefer the already-linked marketplaces to avoid missing the
-            # record when the database search ignores an unflushed cache.
-            existing = self.marketplace_ids.filtered(
-                lambda m: m.marketplace_id == marketplace_id
-            )
-            if not existing:
-                existing = Marketplace.search(
-                    [
-                        ("backend_id", "=", self.id),
-                        ("marketplace_id", "=", marketplace_id),
-                    ],
-                    limit=1,
-                )
-
-            if existing:
-                existing.write(vals)
-                updated += 1
-            else:
-                Marketplace.create(vals)
-                created += 1
-
-        if created or updated:
-            # Log the update/create event to the Odoo server log
-            _logger.info(
-                "[AmazonBackend] Created %d, updated %d marketplace(s) for backend ID %s",
-                created,
-                updated,
-                self.id,
-            )
-            # Notify success and reload form to display fetched marketplaces
-            return {
-                "type": "ir.actions.client",
-                "tag": "display_notification",
-                "params": {
-                    "title": "Marketplaces Synced",
-                    "message": f"Created {created}, updated {updated} marketplace(s).",
-                    "type": "success",
-                    "sticky": False,
-                    "next": {
-                        "type": "ir.actions.client",
-                        "tag": "reload",
-                    },
-                },
-            }
-        else:
-            return {
-                "type": "ir.actions.client",
-                "tag": "display_notification",
-                "params": {
-                    "title": "Marketplaces Synced",
-                    "message": "No marketplaces created or updated.",
-                    "type": "info",
-                    "sticky": False,
                 },
             }

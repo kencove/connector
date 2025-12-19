@@ -28,32 +28,6 @@
         <field name="model">amazon.shop</field>
         <field name="arch" type="xml">
             <form string="Amazon Shop">
-                <header>
-                    <button
-                        name="action_sync_catalog"
-                        string="Sync Catalog"
-                        type="object"
-                        class="btn-primary"
-                    />
-                    <button
-                        name="action_sync_orders"
-                        string="Sync Orders"
-                        type="object"
-                        class="btn-primary"
-                    />
-                    <button
-                        name="action_push_stock"
-                        string="Push Stock"
-                        type="object"
-                        class="btn-secondary"
-                    />                    <button
-                        name="action_sync_competitive_prices"
-                        string="Sync Competitive Pricing"
-                        type="object"
-                        class="btn-secondary"
-                        attrs="{'invisible': [('sync_price', '=', False)]}"
-                    />
-                </header>
                 <sheet>
                     <group>
                         <field name="name" />
@@ -83,7 +57,6 @@
                         <field name="order_sync_lookback_days" />
                         <field name="last_order_sync" readonly="1" />
                         <field name="last_stock_sync" readonly="1" />
-                        <field name="last_price_sync" readonly="1" />
                         <field name="active" />
                     </group>
                     <group string="Extra Routing Line">
@@ -105,15 +78,34 @@
                             attrs="{'invisible': [('add_exp_line', '=', False)]}"
                         />
                     </group>
-                    <group string="Notes" col="1">
+                    <group string="Notes">
                         <field name="note" nolabel="1" />
                     </group>
                 </sheet>
                 <div class="oe_chatter">
                     <field name="message_follower_ids" widget="mail_followers" />
                     <field name="message_ids" widget="mail_thread" />
-                    <field name="activity_ids" />
                 </div>
+                <footer>
+                    <button
+                        name="action_sync_catalog"
+                        string="Sync Catalog"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button
+                        name="action_sync_orders"
+                        string="Sync Orders"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button
+                        name="action_push_stock"
+                        string="Push Stock"
+                        type="object"
+                        class="btn-secondary"
+                    />
+                </footer>
             </form>
         </field>
     </record>
