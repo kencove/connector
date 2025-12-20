@@ -3,10 +3,10 @@
 
 from datetime import datetime, timedelta
 
-from odoo.tests.common import TransactionCase
+from odoo.addons.component.tests.common import TransactionComponentCase
 
 
-class CommonConnectorAmazonSpapi(TransactionCase):
+class CommonConnectorAmazonSpapi(TransactionComponentCase):
     """Base class for Amazon SP-API connector tests"""
 
     @classmethod
@@ -19,6 +19,15 @@ class CommonConnectorAmazonSpapi(TransactionCase):
         self.backend = self._create_backend()
         self.marketplace = self._create_marketplace()
         self.shop = self._create_shop()
+        # Create a simple product used by most sample Amazon items
+        self.product = self.env["product.product"].create(
+            {
+                "name": "Test Product",
+                "default_code": "TEST-SKU-001",
+                "type": "service",
+                "list_price": 99.99,
+            }
+        )
 
     def _create_backend(self, **kwargs):
         """Create a test backend record"""
@@ -70,9 +79,9 @@ class CommonConnectorAmazonSpapi(TransactionCase):
     def _create_sample_amazon_order(self):
         """Create a sample Amazon order data structure"""
         return {
-            "AmazonOrderId": "TEST-AMAZON-ORDER-001",
-            "PurchaseDate": datetime.now().isoformat(),
-            "LastUpdateDate": datetime.now().isoformat(),
+            "AmazonOrderId": "111-1111111-1111111",
+            "PurchaseDate": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "LastUpdateDate": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "OrderStatus": "Pending",
             "FulfillmentChannel": "MFN",
             "BuyerEmail": "test@example.com",
@@ -85,8 +94,10 @@ class CommonConnectorAmazonSpapi(TransactionCase):
             "PaymentExecutionDetail": {"PaymentMethod": "Other"},
             "PaymentMethod": "Other",
             "OrderType": "StandardOrder",
-            "EarliestShipDate": datetime.now().isoformat(),
-            "LatestShipDate": (datetime.now() + timedelta(days=5)).isoformat(),
+            "EarliestShipDate": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "LatestShipDate": (datetime.now() + timedelta(days=5)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
             "IsISPU": False,
             "MarketplaceId": "ATVPDKIKX0DER",
             "ShippingAddress": {
@@ -108,6 +119,7 @@ class CommonConnectorAmazonSpapi(TransactionCase):
         return {
             "OrderItemId": "TEST-ORDER-ITEM-001",
             "SellerSKU": "TEST-SKU-001",
+            "ASIN": "TEST-ASIN-001",
             "Title": "Test Product",
             "QuantityOrdered": 1,
             "QuantityShipped": 0,
@@ -129,20 +141,21 @@ class CommonConnectorAmazonSpapi(TransactionCase):
         """Create an amazon.sale.order with required partner and sale.order"""
         # Create partner if not provided
         if "partner_id" not in kwargs:
-            partner = self.env["res.partner"].create({
-                "name": "Test Buyer",
-                "email": "test@example.com"
-            })
+            partner = self.env["res.partner"].create(
+                {"name": "Test Buyer", "email": "test@example.com"}
+            )
         else:
             partner = self.env["res.partner"].browse(kwargs.pop("partner_id"))
 
         # Create sale.order if odoo_id not provided
         if "odoo_id" not in kwargs:
             order_name = kwargs.get("name", "TEST-SALE-ORDER")
-            sale_order = self.env["sale.order"].create({
-                "partner_id": partner.id,
-                "name": order_name,
-            })
+            sale_order = self.env["sale.order"].create(
+                {
+                    "partner_id": partner.id,
+                    "name": order_name,
+                }
+            )
             kwargs["odoo_id"] = sale_order.id
 
         # Set default values if not provided
@@ -156,3 +169,47 @@ class CommonConnectorAmazonSpapi(TransactionCase):
         defaults.update(kwargs)
 
         return self.env["amazon.sale.order"].create(defaults)
+
+    def _create_product_binding(self, **kwargs):
+        """Create an amazon.product.binding"""
+        defaults = {
+            "backend_id": self.backend.id,
+            "marketplace_id": self.marketplace.id,
+            "odoo_id": self.product.id,
+            "seller_sku": "TEST-SKU-001",
+            "asin": "B08TEST123",
+            "sync_stock": False,
+            "sync_price": False,
+        }
+        defaults.update(kwargs)
+        return self.env["amazon.product.binding"].create(defaults)
+
+    def _create_sample_pricing_data(self, asin=None):
+        """Create sample competitive pricing data from Amazon API"""
+        return {
+            "ASIN": asin or "B08TEST123",
+            "status": "Success",
+            "Product": {
+                "CompetitivePricing": {
+                    "CompetitivePrices": [
+                        {
+                            "CompetitivePriceId": "1",
+                            "Price": {
+                                "LandedPrice": {"CurrencyCode": "USD", "Amount": 99.99},
+                                "ListingPrice": {
+                                    "CurrencyCode": "USD",
+                                    "Amount": 89.99,
+                                },
+                                "Shipping": {"CurrencyCode": "USD", "Amount": 10.00},
+                            },
+                            "condition": "New",
+                            "subcondition": "New",
+                            "belongsToRequester": True,
+                        }
+                    ],
+                    "NumberOfOfferListings": [
+                        {"condition": "New", "Count": 5},
+                    ],
+                },
+            },
+        }

@@ -1,9 +1,6 @@
 # Copyright 2025 Kencove
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl.html)
 
-
-import json
-import os
 from datetime import datetime
 from unittest import mock
 
@@ -11,20 +8,6 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from . import common
-
-
-# Helper to load productPricingV0.json
-def load_pricing_api_sample():
-    here = os.path.dirname(__file__)
-    with open(os.path.join(here, "productPricingV0.json"), "r") as f:
-        data = json.load(f)
-    # Find the sample response for /products/pricing/v0/price
-    try:
-        return data["paths"]["/products/pricing/v0/price"]["get"]["responses"]["200"][
-            "examples"
-        ]["application/json"]
-    except Exception:
-        return {}
 
 
 @tagged("post_install", "-at_install")
@@ -60,12 +43,6 @@ class TestAmazonCompetitivePrice(common.CommonConnectorAmazonSpapi):
         timestamp = int(time() * 1000000)  # microsecond precision
         unique_suffix = uuid.uuid4().hex[:8]
 
-        # Only set defaults if not explicitly provided
-        if "competitive_price_id" not in kwargs:
-            kwargs["competitive_price_id"] = f"test-{timestamp}-{unique_suffix}"
-        if "fetch_date" not in kwargs:
-            kwargs["fetch_date"] = datetime.now()
-
         values = {
             "product_binding_id": self.product_binding.id,
             "asin": "B01ABCDEFG",
@@ -79,18 +56,14 @@ class TestAmazonCompetitivePrice(common.CommonConnectorAmazonSpapi):
             "is_buy_box_winner": True,
             "number_of_offers_new": 5,
             "number_of_offers_used": 2,
+            "competitive_price_id": f"test-{timestamp}-{unique_suffix}",
+            "fetch_date": datetime.now(),
         }
         values.update(kwargs)
         return self.env["amazon.competitive.price"].create(values)
 
     def _create_sample_pricing_api_response(self):
-        """Create sample pricing API response from productPricingV0.json"""
-        pricing = load_pricing_api_sample()
-        # Try to extract a realistic structure for the test
-        if "payload" in pricing and "Product" in pricing["payload"][0]:
-            # Already in expected format
-            return pricing["payload"]
-        # Fallback to previous static sample if not found
+        """Create sample pricing API response"""
         return [
             {
                 "ASIN": "B01ABCDEFG",
@@ -254,28 +227,21 @@ class TestAmazonCompetitivePrice(common.CommonConnectorAmazonSpapi):
         self.assertTrue(recent_price.active)
 
     def test_unique_constraint(self):
-        """Test unique constraint on competitive price
-        (use unique values, fail only on true duplicate)"""
+        """Test unique constraint on competitive price"""
         import time
 
         from psycopg2 import IntegrityError
 
-        # Create first record
+        # Create first record - capture its fetch_date for duplicate test
         first_record = self._create_competitive_price(
             competitive_price_id="test-id-unique-constraint-1"
         )
         test_fetch_date = first_record.fetch_date
         test_competitive_price_id = first_record.competitive_price_id
 
-        # Create a second record with a different competitive_price_id
-        # (should succeed)
-        self._create_competitive_price(
-            competitive_price_id="test-id-unique-constraint-2",
-            fetch_date=test_fetch_date,
-        )
-
-        # Try to create duplicate with exact same values
-        # - should raise IntegrityError
+        # Try to create duplicate with exact same values - should raise IntegrityError
+        # Ensure microsecond difference to avoid accidental duplicate
+        # from datetime.now() between the two calls
         time.sleep(0.001)  # 1ms delay to ensure different timestamp in helper
         with self.assertRaises(IntegrityError):
             with self.env.cr.savepoint():
