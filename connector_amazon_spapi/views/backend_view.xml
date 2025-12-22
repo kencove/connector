@@ -21,6 +21,19 @@
         <field name="model">amazon.backend</field>
         <field name="arch" type="xml">
             <form string="Amazon Backend">
+                <header>
+                    <button
+                        name="action_test_connection"
+                        string="Test Connection"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button
+                        name="action_fetch_marketplaces"
+                        type="object"
+                        string="Fetch Marketplaces"
+                    />
+                </header>
                 <sheet>
                     <group>
                         <field name="name" />
@@ -30,6 +43,11 @@
                         <field name="company_id" />
                         <field name="warehouse_id" />
                         <field name="test_mode" />
+                        <field
+                            name="read_only_mode"
+                            widget="boolean_toggle"
+                            attrs="{'invisible': [('test_mode', '=', False)]}"
+                        />
                     </group>
                     <group string="Credentials">
                         <field name="seller_id" />
