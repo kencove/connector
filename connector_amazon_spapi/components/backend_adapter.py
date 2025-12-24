@@ -1,5 +1,11 @@
 from odoo.addons.component.core import Component
 
+try:
+    # Prefer the official python-amazon-sp-api library when available
+    from sp_api.api import CatalogItems, Feeds, ListingsItems, Orders, ProductPricing
+except Exception:  # ImportError or any env issue
+    Orders = ProductPricing = Feeds = CatalogItems = ListingsItems = None
+
 
 class AmazonBaseAdapter(Component):
     _name = "amazon.adapter"
@@ -8,11 +14,15 @@ class AmazonBaseAdapter(Component):
     _backend_model_name = "amazon.backend"
 
     def _call_api(self, method, endpoint, params=None, json_data=None):
-        """Call SP-API through the backend with authentication"""
+        """Call SP-API through the backend with authentication (fallback path)."""
         backend = self.backend_record
         return backend._call_sp_api(
             method, endpoint, params=params, json_data=json_data
         )
+
+    def _creds(self):
+        """Helper to retrieve sp_api credentials from backend."""
+        return self.backend_record._get_sp_api_credentials()
 
 
 class AmazonOrdersAdapter(AmazonBaseAdapter):
@@ -27,20 +37,24 @@ class AmazonOrdersAdapter(AmazonBaseAdapter):
         order_statuses=None,
         next_token=None,
     ):
-        """Fetch orders from Amazon Orders API with pagination support
+        """Fetch orders from Amazon Orders API with pagination support.
 
-        Args:
-            marketplace_id: Amazon marketplace ID
-            created_after: ISO 8601 datetime for CreatedAfter filter
-            updated_after: ISO 8601 datetime for LastUpdatedAfter filter
-            order_statuses: List of order statuses to filter
-            next_token: Pagination token for subsequent requests
-
-        Returns:
-            dict: API response with Orders list and NextToken
+        Tries `sp_api.api.Orders` when available; falls back to raw HTTP.
         """
-        params = {"MarketplaceIds": marketplace_id}
+        if Orders:
+            client = Orders(credentials=self._creds())
+            if next_token:
+                resp = client.get_orders_by_next_token(NextToken=next_token)
+            else:
+                resp = client.get_orders(
+                    MarketplaceIds=[marketplace_id],
+                    CreatedAfter=created_after,
+                    LastUpdatedAfter=updated_after,
+                    OrderStatuses=order_statuses,
+                )
+            return resp.payload if hasattr(resp, "payload") else resp
 
+        params = {"MarketplaceIds": marketplace_id}
         if next_token:
             params["NextToken"] = next_token
         else:
@@ -50,32 +64,29 @@ class AmazonOrdersAdapter(AmazonBaseAdapter):
                 params["LastUpdatedAfter"] = updated_after
             if order_statuses:
                 params["OrderStatuses"] = ",".join(order_statuses)
-
         return self._call_api("GET", "/orders/v0/orders", params=params)
 
     def get_order_items(self, amazon_order_id, next_token=None):
-        """Fetch order items for a specific order with pagination
+        """Fetch order items for a specific order with pagination."""
+        if Orders:
+            client = Orders(credentials=self._creds())
+            if next_token:
+                resp = client.get_order_items(amazon_order_id, NextToken=next_token)
+            else:
+                resp = client.get_order_items(amazon_order_id)
+            return resp.payload if hasattr(resp, "payload") else resp
 
-        Args:
-            amazon_order_id: Amazon order ID
-            next_token: Pagination token for subsequent requests
-
-        Returns:
-            dict: API response with OrderItems list and NextToken
-        """
         params = {"NextToken": next_token} if next_token else None
         endpoint = f"/orders/v0/orders/{amazon_order_id}/orderitems"
         return self._call_api("GET", endpoint, params=params)
 
     def get_order(self, amazon_order_id):
-        """Fetch single order details
+        """Fetch single order details."""
+        if Orders:
+            client = Orders(credentials=self._creds())
+            resp = client.get_order(amazon_order_id)
+            return resp.payload if hasattr(resp, "payload") else resp
 
-        Args:
-            amazon_order_id: Amazon order ID
-
-        Returns:
-            dict: Order details
-        """
         endpoint = f"/orders/v0/orders/{amazon_order_id}"
         return self._call_api("GET", endpoint)
 
@@ -85,18 +96,31 @@ class AmazonPricingAdapter(AmazonBaseAdapter):
     _usage = "pricing.adapter"
 
     def get_competitive_pricing(self, marketplace_id, asins=None, skus=None):
-        """Get competitive pricing for products
+        """Get competitive pricing for products.
 
-        Args:
-            marketplace_id: Amazon marketplace ID
-            asins: List of ASINs (max 20)
-            skus: List of SKUs (max 20)
-
-        Returns:
-            dict: Pricing information
+        Tries `sp_api.api.ProductPricing` when available; falls back to raw HTTP.
         """
-        params = {"MarketplaceId": marketplace_id}
+        if ProductPricing:
+            client = ProductPricing(credentials=self._creds())
+            if asins:
+                if len(asins) > 20:
+                    raise ValueError(
+                        "Amazon enforces a maximum of 20 ASINs per request"
+                    )
+                resp = client.get_competitive_pricing(
+                    MarketplaceId=marketplace_id, Asins=asins
+                )
+            elif skus:
+                if len(skus) > 20:
+                    raise ValueError("Amazon enforces a maximum of 20 SKUs per request")
+                resp = client.get_competitive_pricing(
+                    MarketplaceId=marketplace_id, Skus=skus
+                )
+            else:
+                return []
+            return resp.payload if hasattr(resp, "payload") else resp
 
+        params = {"MarketplaceId": marketplace_id}
         if asins:
             if len(asins) > 20:
                 raise ValueError("Amazon enforces a maximum of 20 ASINs per request")
@@ -105,7 +129,6 @@ class AmazonPricingAdapter(AmazonBaseAdapter):
             if len(skus) > 20:
                 raise ValueError("Amazon enforces a maximum of 20 SKUs per request")
             params["Skus"] = ",".join(skus)
-
         return self._call_api(
             "GET", "/products/pricing/v0/competitivePrice", params=params
         )
@@ -165,24 +188,22 @@ class AmazonPricingAdapter(AmazonBaseAdapter):
         return aggregated
 
     def get_pricing(self, marketplace_id, item_type, asins=None, skus=None):
-        """Get pricing information for products
+        """Get pricing information for products."""
+        if ProductPricing:
+            client = ProductPricing(credentials=self._creds())
+            kwargs = {"MarketplaceId": marketplace_id, "ItemType": item_type}
+            if asins:
+                kwargs["Asins"] = asins[:20]
+            if skus:
+                kwargs["Skus"] = skus[:20]
+            resp = client.get_pricing(**kwargs)
+            return resp.payload if hasattr(resp, "payload") else resp
 
-        Args:
-            marketplace_id: Amazon marketplace ID
-            item_type: 'Asin' or 'Sku'
-            asins: List of ASINs (max 20)
-            skus: List of SKUs (max 20)
-
-        Returns:
-            dict: Pricing information
-        """
         params = {"MarketplaceId": marketplace_id, "ItemType": item_type}
-
         if asins:
             params["Asins"] = ",".join(asins[:20])
         if skus:
             params["Skus"] = ",".join(skus[:20])
-
         return self._call_api("GET", "/products/pricing/v0/price", params=params)
 
     def create_price_feed(self, feed_content):
@@ -205,23 +226,43 @@ class AmazonInventoryAdapter(AmazonBaseAdapter):
     _usage = "inventory.adapter"
 
     def create_inventory_feed(self, feed_content, marketplace_ids):
-        """Submit inventory/stock feed through Feeds API
+        """Submit inventory/stock feed through Feeds API.
 
-        Args:
-            feed_content: XML feed content as string
-            marketplace_ids: List of marketplace IDs
-
-        Returns:
-            dict: Feed creation response with feedId
+        If `sp_api` is available, use its Feeds client; otherwise fallback.
         """
-        feed_adapter = self.component(usage="feed.adapter")
+        if Feeds:
+            client = Feeds(credentials=self._creds())
+            # 1) Create feed document
+            doc = client.create_feed_document(contentType="text/xml; charset=UTF-8")
+            doc_payload = getattr(doc, "payload", doc)
+            feed_document_id = doc_payload.get("feedDocumentId")
 
-        # Create and submit feed document
-        # The feed adapter handles: create_feed_document -> upload -> create_feed
+            # 2) Upload content to the provided S3 URL
+            upload_url = doc_payload.get("url") or doc_payload.get("uploadUrl")
+            if upload_url:
+                import requests
+
+                # Amazon requires gzip for many feeds; existing code sends XML.
+                # Keep as text upload for now; callers may pre-compress if needed.
+                requests.put(
+                    upload_url,
+                    data=feed_content.encode("utf-8"),
+                    headers={"Content-Type": "text/xml; charset=UTF-8"},
+                    timeout=60,
+                )
+
+            # 3) Create feed submission
+            created = client.create_feed(
+                feedType="POST_INVENTORY_AVAILABILITY_DATA",
+                marketplaceIds=marketplace_ids,
+                inputFeedDocumentId=feed_document_id,
+            )
+            return created.payload if hasattr(created, "payload") else created
+
+        # Fallback path via generic feed adapter (raw HTTP)
+        feed_adapter = self.component(usage="feed.adapter")
         doc_response = feed_adapter.create_feed_document()
         feed_document_id = doc_response.get("feedDocumentId")
-
-        # Create feed submission with the document
         return feed_adapter.create_feed(
             "POST_INVENTORY_AVAILABILITY_DATA", feed_document_id, marketplace_ids
         )
@@ -232,75 +273,63 @@ class AmazonFeedAdapter(AmazonBaseAdapter):
     _usage = "feed.adapter"
 
     def create_feed_document(self, content_type="text/xml; charset=UTF-8"):
-        """Create feed document and get upload URL
-
-        Args:
-            content_type: Content type for the feed
-
-        Returns:
-            dict: Response with feedDocumentId and uploadUrl
-        """
+        """Create feed document and get upload URL."""
+        if Feeds:
+            client = Feeds(credentials=self._creds())
+            resp = client.create_feed_document(contentType=content_type)
+            return resp.payload if hasattr(resp, "payload") else resp
         payload = {"contentType": content_type}
         return self._call_api("POST", "/feeds/2021-06-30/documents", json_data=payload)
 
     def create_feed(
         self, feed_type, feed_document_id, marketplace_ids, feed_options=None
     ):
-        """Create feed submission
+        """Create feed submission."""
+        if Feeds:
+            client = Feeds(credentials=self._creds())
+            kwargs = {
+                "feedType": feed_type,
+                "marketplaceIds": marketplace_ids,
+                "inputFeedDocumentId": feed_document_id,
+            }
+            if feed_options:
+                kwargs["feedOptions"] = feed_options
+            resp = client.create_feed(**kwargs)
+            return resp.payload if hasattr(resp, "payload") else resp
 
-        Args:
-            feed_type: Amazon feed type (e.g., 'POST_PRODUCT_DATA')
-            feed_document_id: Document ID from create_feed_document
-            marketplace_ids: List of marketplace IDs
-            feed_options: Optional dict of feed-specific options
-
-        Returns:
-            dict: Response with feedId
-        """
         payload = {
             "feedType": feed_type,
             "marketplaceIds": marketplace_ids,
             "inputFeedDocumentId": feed_document_id,
         }
-
         if feed_options:
             payload["feedOptions"] = feed_options
-
         return self._call_api("POST", "/feeds/2021-06-30/feeds", json_data=payload)
 
     def get_feed(self, feed_id):
-        """Get feed processing status
-
-        Args:
-            feed_id: Amazon feed ID
-
-        Returns:
-            dict: Feed status and details
-        """
+        """Get feed processing status."""
+        if Feeds:
+            client = Feeds(credentials=self._creds())
+            resp = client.get_feed(feed_id)
+            return resp.payload if hasattr(resp, "payload") else resp
         endpoint = f"/feeds/2021-06-30/feeds/{feed_id}"
         return self._call_api("GET", endpoint)
 
     def get_feed_document(self, feed_document_id):
-        """Get feed processing result document
-
-        Args:
-            feed_document_id: Result document ID from feed status
-
-        Returns:
-            dict: Response with downloadUrl for results
-        """
+        """Get feed processing result document."""
+        if Feeds:
+            client = Feeds(credentials=self._creds())
+            resp = client.get_feed_document(feed_document_id)
+            return resp.payload if hasattr(resp, "payload") else resp
         endpoint = f"/feeds/2021-06-30/documents/{feed_document_id}"
         return self._call_api("GET", endpoint)
 
     def cancel_feed(self, feed_id):
-        """Cancel a feed submission
-
-        Args:
-            feed_id: Amazon feed ID
-
-        Returns:
-            dict: Cancellation response
-        """
+        """Cancel a feed submission."""
+        if Feeds:
+            client = Feeds(credentials=self._creds())
+            resp = client.cancel_feed(feed_id)
+            return resp.payload if hasattr(resp, "payload") else resp
         endpoint = f"/feeds/2021-06-30/feeds/{feed_id}"
         return self._call_api("DELETE", endpoint)
 
@@ -317,51 +346,44 @@ class AmazonCatalogAdapter(AmazonBaseAdapter):
         identifier_type=None,
         marketplace_id=None,
     ):
-        """Search catalog items
-
-        Args:
-            marketplace_ids: List of marketplace IDs
-            marketplace_id: Single marketplace ID (alternative to list)
-            keywords: Search keywords
-            identifiers: List of product identifiers (ASIN, UPC, etc.)
-            identifier_type: Type of identifier ('ASIN', 'UPC', 'EAN', etc.)
-
-        Returns:
-            dict: Catalog items matching search
-        """
+        """Search catalog items."""
         ids_list = marketplace_ids or ([marketplace_id] if marketplace_id else [])
-        params = {"marketplaceIds": ",".join(ids_list)}
+        if CatalogItems:
+            client = CatalogItems(credentials=self._creds())
+            resp = client.search_catalog_items(
+                marketplaceIds=ids_list,
+                keywords=keywords,
+                identifiers=identifiers,
+                identifiersType=identifier_type,
+            )
+            return resp.payload if hasattr(resp, "payload") else resp
 
+        params = {"marketplaceIds": ",".join(ids_list)}
         if keywords:
             params["keywords"] = keywords
         if identifiers:
             params["identifiers"] = ",".join(identifiers)
         if identifier_type:
             params["identifiersType"] = identifier_type
-
         return self._call_api("GET", "/catalog/2022-04-01/items", params=params)
 
     def get_catalog_item(
         self, asin, marketplace_ids=None, included_data=None, marketplace_id=None
     ):
-        """Get detailed catalog item information
-
-        Args:
-            asin: Product ASIN
-            marketplace_ids: List of marketplace IDs
-            marketplace_id: Single marketplace ID (alternative to list)
-            included_data: List of data types to include
-                ('attributes', 'identifiers', 'images', 'productTypes', etc.)
-
-        Returns:
-            dict: Detailed catalog item data
-        """
+        """Get detailed catalog item information."""
         ids_list = marketplace_ids or ([marketplace_id] if marketplace_id else [])
-        params = {"marketplaceIds": ",".join(ids_list)}
+        if CatalogItems:
+            client = CatalogItems(credentials=self._creds())
+            resp = client.get_catalog_item(
+                asin,
+                marketplaceIds=ids_list,
+                includedData=included_data,
+            )
+            return resp.payload if hasattr(resp, "payload") else resp
 
+        params = {"marketplaceIds": ",".join(ids_list)}
         if included_data:
             params["includedData"] = ",".join(included_data)
-
         endpoint = f"/catalog/2022-04-01/items/{asin}"
         return self._call_api("GET", endpoint, params=params)
 
@@ -371,38 +393,39 @@ class AmazonListingsAdapter(AmazonBaseAdapter):
     _usage = "listings.adapter"
 
     def get_listings_item(self, seller_sku, marketplace_ids, included_data=None):
-        """Get seller's listing for a SKU
+        """Get seller's listing for a SKU."""
+        if ListingsItems:
+            client = ListingsItems(credentials=self._creds())
+            resp = client.get_listings_item(
+                self.backend_record.seller_id,
+                seller_sku,
+                marketplaceIds=marketplace_ids,
+                includedData=included_data,
+            )
+            return resp.payload if hasattr(resp, "payload") else resp
 
-        Args:
-            seller_sku: Seller SKU
-            marketplace_ids: List of marketplace IDs
-            included_data: List of data sections ('summaries', 'attributes', etc.)
-
-        Returns:
-            dict: Listing details
-        """
         params = {"marketplaceIds": ",".join(marketplace_ids)}
-
         if included_data:
             params["includedData"] = ",".join(included_data)
-
         endpoint = (
             f"/listings/2021-08-01/items/{self.backend_record.seller_id}/{seller_sku}"
         )
         return self._call_api("GET", endpoint, params=params)
 
     def put_listings_item(self, seller_sku, marketplace_ids, product_type, attributes):
-        """Create or fully update a listing
+        """Create or fully update a listing."""
+        if ListingsItems:
+            client = ListingsItems(credentials=self._creds())
+            resp = client.put_listings_item(
+                self.backend_record.seller_id,
+                seller_sku,
+                marketplaceIds=marketplace_ids,
+                productType=product_type,
+                attributes=attributes,
+                requirements="LISTING",
+            )
+            return resp.payload if hasattr(resp, "payload") else resp
 
-        Args:
-            seller_sku: Seller SKU
-            marketplace_ids: List of marketplace IDs
-            product_type: Amazon product type
-            attributes: Dict of listing attributes
-
-        Returns:
-            dict: Update response with status
-        """
         endpoint = (
             f"/listings/2021-08-01/items/{self.backend_record.seller_id}/{seller_sku}"
         )
@@ -412,7 +435,6 @@ class AmazonListingsAdapter(AmazonBaseAdapter):
             "attributes": attributes,
         }
         params = {"marketplaceIds": ",".join(marketplace_ids)}
-
         return self._call_api("PUT", endpoint, params=params, json_data=payload)
 
     def patch_listings_item(self, seller_sku, marketplace_ids, patches):

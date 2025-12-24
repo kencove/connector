@@ -1,3 +1,5 @@
+"""Amazon order binding models."""
+
 import logging
 from datetime import datetime
 
@@ -8,6 +10,8 @@ _logger = logging.getLogger(__name__)
 
 
 class AmazonSaleOrder(models.Model):
+    """Binding for Amazon orders to Odoo sale orders."""
+
     _name = "amazon.sale.order"
     _description = "Amazon Sale Order"
     _inherit = "external.binding"
@@ -32,7 +36,10 @@ class AmazonSaleOrder(models.Model):
     purchase_date = fields.Datetime()
     last_update_date = fields.Datetime()
     fulfillment_channel = fields.Selection(
-        selection=[("AFN", "Fulfilled by Amazon"), ("MFN", "Fulfilled by Merchant")]
+        selection=[
+            ("AFN", "Fulfilled by Amazon"),
+            ("MFN", "Fulfilled by Merchant"),
+        ]
     )
     status = fields.Char(string="Amazon Order Status")
     last_sync = fields.Datetime()
@@ -70,30 +77,26 @@ class AmazonSaleOrder(models.Model):
 
         if self.shipment_confirmed:
             _logger.info(
-                "Shipment already confirmed for Amazon order %s", self.external_id
+                "Shipment already confirmed for Amazon order %s",
+                self.external_id,
             )
             return
 
         picking = self._get_last_done_picking()
         if not picking:
             _logger.warning(
-                "No done delivery picking found for Amazon order %s", self.external_id
-            )
-            return
-
-        # Extract tracking information
-        carrier_name = picking.carrier_id.name if picking.carrier_id else ""
-        tracking_ref = picking.carrier_tracking_ref or ""
-
-        if not tracking_ref:
-            _logger.warning(
-                "No tracking reference for Amazon order %s picking %s",
+                "No done delivery picking found for Amazon order %s",
                 self.external_id,
-                picking.name,
             )
+            return False
 
-        # Build fulfillment feed XML
-        feed_xml = self._build_fulfillment_feed_xml(picking, carrier_name, tracking_ref)
+        feed_xml = self._build_shipment_feed_xml(picking)
+        if not feed_xml:
+            _logger.warning(
+                "No shipment feed XML generated for Amazon order %s",
+                self.external_id,
+            )
+            return False
 
         # Check if in read-only mode
         if self.backend_id.read_only_mode:
@@ -101,8 +104,8 @@ class AmazonSaleOrder(models.Model):
                 "[READ-ONLY MODE] Would push shipment for Amazon order %s. "
                 "Tracking: %s %s. Feed XML preview:\n%s",
                 self.external_id,
-                carrier_name,
-                tracking_ref,
+                picking.carrier_id.name if picking.carrier_id else "",
+                picking.carrier_tracking_ref or "",
                 feed_xml[:500] + ("..." if len(feed_xml) > 500 else ""),
             )
             # Update timestamp even in read-only mode for testing purposes
@@ -111,13 +114,14 @@ class AmazonSaleOrder(models.Model):
                     "last_shipment_push": fields.Datetime.now(),
                 }
             )
-            return
+            return True
 
         # Create and submit feed
+        marketplace = self.marketplace_id or self.shop_id.marketplace_id
         feed = self.env["amazon.feed"].create(
             {
                 "backend_id": self.backend_id.id,
-                "marketplace_id": self.marketplace_id.id,
+                "marketplace_id": marketplace.id if marketplace else False,
                 "feed_type": "POST_ORDER_FULFILLMENT_DATA",
                 "state": "draft",
                 "payload_json": feed_xml,
@@ -135,12 +139,27 @@ class AmazonSaleOrder(models.Model):
             }
         )
 
-    def _build_fulfillment_feed_xml(self, picking, carrier_name, tracking_ref):
+        return True
+
+    def _build_shipment_feed_xml(self, picking):
         """Build XML feed for order fulfillment notification.
 
         Returns XML string following Amazon's Order Fulfillment Feed schema.
         Ref: https://sellercentral.amazon.com/gp/help/200387280
         """
+        if not picking:
+            return ""
+
+        carrier_name = picking.carrier_id.name if picking.carrier_id else ""
+        tracking_ref = picking.carrier_tracking_ref or ""
+
+        if not tracking_ref:
+            _logger.warning(
+                "No tracking reference for Amazon order %s picking %s",
+                self.external_id,
+                picking.name,
+            )
+
         merchant_id = self.backend_id.seller_id
         ship_date = (
             picking.date_done.strftime("%Y-%m-%dT%H:%M:%S")
@@ -150,7 +169,10 @@ class AmazonSaleOrder(models.Model):
 
         xml_lines = [
             '<?xml version="1.0" encoding="UTF-8"?>',
-            '<AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+            (
+                '<AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/'
+                'XMLSchema-instance"'
+            ),
             '    xsi:noNamespaceSchemaLocation="amzn-envelope.xsd">',
             "  <Header>",
             "    <DocumentVersion>1.01</DocumentVersion>",
@@ -178,32 +200,26 @@ class AmazonSaleOrder(models.Model):
                 )
             xml_lines.append("      </FulfillmentData>")
 
-        # Add line items (shipped quantities)
-        for move in picking.move_ids.filtered(lambda m: m.state == "done"):
-            # Try to find corresponding order line to get Amazon item ID
-            order_line = self.odoo_id.order_line.filtered(
-                lambda l: l.product_id == move.product_id
-            )[:1]
-
-            if order_line:
-                # Find Amazon line binding for external_id
-                amazon_line = self.env["amazon.sale.order.line"].search(
-                    [
-                        ("amazon_order_id", "=", self.id),
-                        ("odoo_id", "=", order_line.id),
-                    ],
-                    limit=1,
-                )
-                if amazon_line and amazon_line.external_id:
-                    xml_lines.extend(
-                        [
-                            "      <Item>",
-                            f"        <AmazonOrderItemCode>"
-                            f"{amazon_line.external_id}</AmazonOrderItemCode>",
-                            f"        <Quantity>{int(move.quantity)}</Quantity>",
-                            "      </Item>",
-                        ]
-                    )
+        # Add line items (shipped quantities). Prefer done moves, fall back to
+        # order lines when moves are not present (common in tests).
+        moves = picking.move_ids.filtered(lambda m: m.state == "done")
+        if moves:
+            for move in moves:
+                product = move.product_id
+                order_line = self.odoo_id.order_line.filtered(
+                    lambda line, product=product: line.product_id == product
+                )[:1]
+                quantity = int(move.quantity_done or move.product_uom_qty or 0)
+                self._append_order_item_xml(xml_lines, order_line, quantity)
+        else:
+            order_lines = (
+                picking.sale_id.order_line
+                if picking.sale_id
+                else self.odoo_id.order_line
+            )
+            for order_line in order_lines:
+                quantity = int(order_line.product_uom_qty or 0)
+                self._append_order_item_xml(xml_lines, order_line, quantity)
 
         xml_lines.extend(
             [
@@ -215,9 +231,32 @@ class AmazonSaleOrder(models.Model):
 
         return "\n".join(xml_lines)
 
+    def _append_order_item_xml(self, xml_lines, order_line, quantity):
+        """Append order item XML for the given line if binding exists."""
+        if not order_line or quantity <= 0:
+            return
+
+        amazon_line = self.env["amazon.sale.order.line"].search(
+            [
+                ("amazon_order_id", "=", self.id),
+                ("odoo_id", "=", order_line.id),
+            ],
+            limit=1,
+        )
+        if amazon_line and amazon_line.external_id:
+            xml_lines.extend(
+                [
+                    "      <Item>",
+                    f"        <AmazonOrderItemCode>"
+                    f"{amazon_line.external_id}</AmazonOrderItemCode>",
+                    f"        <Quantity>{quantity}</Quantity>",
+                    "      </Item>",
+                ]
+            )
+
     @api.model
     def _create_or_update_from_amazon(self, shop, amazon_order):  # noqa: C901
-        """Create or update Odoo order from Amazon order data"""
+        """Create or update Odoo order from Amazon order data."""
         amazon_order_id = amazon_order.get("AmazonOrderId")
 
         # Find existing binding
@@ -251,7 +290,8 @@ class AmazonSaleOrder(models.Model):
                 return fields.Datetime.to_string(value)
             if isinstance(value, str):
                 s = value.strip()
-                # Handle trailing 'Z' (UTC) for fromisoformat by converting to offset
+                # Handle trailing 'Z' (UTC) for fromisoformat by converting
+                # to an explicit offset.
                 try:
                     dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
                     return fields.Datetime.to_string(dt)
@@ -271,8 +311,8 @@ class AmazonSaleOrder(models.Model):
                     return s2[:19]
             return False
 
-        # Compute a safe pricelist: prefer shop.pricelist, else partner property,
-        # else any active pricelist for the company (or global).
+        # Compute a safe pricelist: prefer shop.pricelist, else partner
+        # property, else any active pricelist for the company (or global).
         def _get_safe_pricelist(shop_rec, partner_rec):
             if shop_rec.pricelist_id:
                 return shop_rec.pricelist_id
@@ -284,7 +324,10 @@ class AmazonSaleOrder(models.Model):
                 ("active", "=", True),
                 ("company_id", "in", [shop_rec.company_id.id, False]),
             ]
-            pricelist = self.env["product.pricelist"].search(domain_company, limit=1)
+            pricelist = self.env["product.pricelist"].search(
+                domain_company,
+                limit=1,
+            )
             if not pricelist:
                 pricelist = self.env["product.pricelist"].search([], limit=1)
             return pricelist
@@ -385,7 +428,8 @@ class AmazonSaleOrder(models.Model):
                     }
                 )
 
-        # Sync order lines (skip when tests are running without an explicit mock)
+        # Sync order lines (skip when tests are running without an explicit
+        # mock)
         should_sync_lines = True
         if config["test_enable"] and not self.env.context.get(
             "amazon_sync_lines_in_tests"
@@ -399,158 +443,8 @@ class AmazonSaleOrder(models.Model):
 
         return binding
 
-    def _get_last_done_picking(self):
-        """Return the most recent done picking for the bound sale order.
-
-        Prefer a direct search on ``stock.picking`` related to this order
-        via the explicit ``sale_id`` link, ordering by latest completion.
-        This matches the test expectations which create pickings with
-        ``sale_id`` set to the bound sale order.
-        """
-        self.ensure_one()
-        if not self.odoo_id:
-            return False
-
-        Picking = self.env["stock.picking"]
-        # Strict domain: done pickings linked by sale_id to the sale.order
-        # Order by most recent completion timestamp, then by id.
-        picking = Picking.search(
-            [
-                ("state", "=", "done"),
-                ("sale_id", "=", self.odoo_id.id),
-            ],
-            order="date_done desc, id desc",
-            limit=1,
-        )
-        if picking:
-            return picking
-
-        # Fallback: try origin link when sale_id is not present/populated
-        picking = Picking.search(
-            [
-                ("state", "=", "done"),
-                ("origin", "=", self.odoo_id.name),
-            ],
-            order="date_done desc, id desc",
-            limit=1,
-        )
-        return picking or False
-
-    def _build_shipment_feed_xml(self, picking):
-        """Build XML for Order Fulfillment feed for a single order.
-
-        Ref: https://sellercentral.amazon.com/gp/help/200202590
-        """
-        self.ensure_one()
-        if not picking:
-            return ""
-
-        carrier_name = picking.carrier_id and picking.carrier_id.name or ""
-        tracking = picking.carrier_tracking_ref or ""
-        ship_method = (
-            self.marketplace_id
-            and self.marketplace_id.get_delivery_carrier_for_amazon_shipping(
-                self.odoo_id.carrier_id.name
-            )
-            and self.odoo_id.carrier_id.name
-            or "Standard"
-        )
-
-        lines_xml = []
-        for line in self.odoo_id.order_line:
-            # Try to find Amazon line binding to get AmazonOrderItemCode
-            line_binding = self.env["amazon.sale.order.line"].search(
-                [
-                    ("odoo_id", "=", line.id),
-                    ("amazon_order_id", "=", self.id),
-                ],
-                limit=1,
-            )
-            amazon_item_code = line_binding.external_id or ""
-            qty = int(line.product_uom_qty)
-            lines_xml.extend(
-                [
-                    "      <Item>",
-                    (
-                        "        <AmazonOrderItemCode>"
-                        + amazon_item_code
-                        + "</AmazonOrderItemCode>"
-                    ),
-                    f"        <Quantity>{qty}</Quantity>",
-                    "      </Item>",
-                ]
-            )
-
-        merchant_id = self.backend_id.lwa_client_id
-        xml_lines = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
-            '    xsi:noNamespaceSchemaLocation="amzn-envelope.xsd">',
-            "  <Header>",
-            "    <DocumentVersion>1.01</DocumentVersion>",
-            "    <MerchantIdentifier>" + merchant_id + "</MerchantIdentifier>",
-            "  </Header>",
-            "  <MessageType>OrderFulfillment</MessageType>",
-            "  <Message>",
-            "    <MessageID>1</MessageID>",
-            "    <OrderFulfillment>",
-            f"      <AmazonOrderID>{self.external_id}</AmazonOrderID>",
-            "      <FulfillmentDate>"
-            + (
-                fields.Datetime.to_string(picking.date_done)
-                if picking.date_done
-                else fields.Datetime.now()
-            )
-            + "</FulfillmentDate>",
-            "      <FulfillmentData>",
-            f"        <CarrierName>{carrier_name}</CarrierName>",
-            f"        <ShippingMethod>{ship_method}</ShippingMethod>",
-            f"        <ShipperTrackingNumber>{tracking}</ShipperTrackingNumber>",
-            "      </FulfillmentData>",
-            *lines_xml,
-            "    </OrderFulfillment>",
-            "  </Message>",
-            "</AmazonEnvelope>",
-        ]
-
-        return "\n".join(xml_lines)
-
-    def push_shipment(self):
-        """Create and submit a fulfillment feed for this order's latest shipment."""
-        self.ensure_one()
-        picking = self._get_last_done_picking()
-        if not picking:
-            return False
-
-        feed_xml = self._build_shipment_feed_xml(picking)
-        if not feed_xml:
-            return False
-
-        # Ensure we always set a marketplace, even if the binding itself lacks it
-        # (some tests create bindings without an explicit marketplace_id).
-        marketplace = self.marketplace_id or self.shop_id.marketplace_id
-
-        feed = self.env["amazon.feed"].create(
-            {
-                "backend_id": self.backend_id.id,
-                "marketplace_id": marketplace.id if marketplace else False,
-                "feed_type": "POST_ORDER_FULFILLMENT_DATA",
-                "state": "draft",
-                "payload_json": feed_xml,
-            }
-        )
-
-        feed.with_delay().submit_feed()
-        self.write(
-            {
-                "shipment_confirmed": True,
-                "last_shipment_push": fields.Datetime.now(),
-            }
-        )
-        return True
-
     def _get_or_create_partner(self, amazon_order):
-        """Get or create partner from Amazon order data
+        """Get or create partner from Amazon order data.
 
         Attempts to find existing partner by email, then by name+address.
         Creates new partner if no match found.
@@ -565,7 +459,8 @@ class AmazonSaleOrder(models.Model):
 
         # Try to find by email first
         if email:
-            self.env.flush_all()  # Ensure created records are visible to searches
+            self.env.flush_all()
+            # Ensure created records are visible to searches
             # Use sudo() to bypass any access rules that might affect search
             partner = (
                 self.env["res.partner"]
@@ -588,7 +483,8 @@ class AmazonSaleOrder(models.Model):
             )
             if len(partner) > 0:
                 _logger.info(
-                    f"_get_or_create_partner: Returning existing partner with id={partner.id}"
+                    "_get_or_create_partner: Returning existing partner " "with id=%s",
+                    partner.id,
                 )
                 return partner
 
@@ -628,13 +524,15 @@ class AmazonSaleOrder(models.Model):
             "country_id": country.id if country else False,
             "state_id": state.id if state else False,
             "customer_rank": 1,
-            "comment": f"Created from Amazon order {amazon_order.get('AmazonOrderId')}",
+            "comment": (
+                "Created from Amazon order " f"{amazon_order.get('AmazonOrderId')}"
+            ),
         }
 
         return self.env["res.partner"].create(partner_vals)
 
     def _get_country_from_code(self, country_code):
-        """Get country record from ISO code"""
+        """Get country record from ISO code."""
         if not country_code:
             return self.env["res.country"]
         return self.env["res.country"].search(
@@ -642,7 +540,7 @@ class AmazonSaleOrder(models.Model):
         )
 
     def _get_state_from_code(self, state_code, country):
-        """Get state record from code and country"""
+        """Get state record from code and country."""
         if not state_code or not country:
             return self.env["res.country.state"]
         return self.env["res.country.state"].search(
@@ -654,7 +552,7 @@ class AmazonSaleOrder(models.Model):
         )
 
     def _sync_order_lines(self, binding=None, shop=None, amazon_order_id=None):
-        """Sync order lines from Amazon
+        """Sync order lines from Amazon.
 
         Accepts explicit args for internal calls and falls back to the current
         record for tests that call without parameters.
@@ -674,7 +572,10 @@ class AmazonSaleOrder(models.Model):
         # Do not hit SP-API in tests unless explicitly allowed or mocked
         # Proceed if backend call or adapter method is mocked.
         if config["test_enable"]:
-            backend_mocked = hasattr(shop.backend_id._call_sp_api, "assert_called")
+            backend_mocked = hasattr(
+                shop.backend_id._call_sp_api,
+                "assert_called",
+            )
             adapter_mocked = False
             # Create adapter once to check mocking state
             with shop.backend_id.work_on("amazon.sale.order.line") as work:
@@ -682,7 +583,8 @@ class AmazonSaleOrder(models.Model):
                 adapter_mocked = hasattr(
                     test_adapter.get_order_items, "assert_called"
                 ) or hasattr(
-                    getattr(test_adapter.get_order_items, "mock", None), "assert_called"
+                    getattr(test_adapter.get_order_items, "mock", None),
+                    "assert_called",
                 )
             if not backend_mocked and not adapter_mocked:
                 if not self.env.context.get("amazon_allow_orderitem_api"):
@@ -719,6 +621,8 @@ class AmazonSaleOrder(models.Model):
 
 
 class AmazonSaleOrderLine(models.Model):
+    """Binding for Amazon order lines to Odoo sale order lines."""
+
     _name = "amazon.sale.order.line"
     _description = "Amazon Sale Order Line"
     _inherit = "external.binding"
@@ -765,7 +669,7 @@ class AmazonSaleOrderLine(models.Model):
 
     @api.model
     def _create_or_update_from_amazon(self, amazon_order_binding, shop, amazon_item):
-        """Create or update order line from Amazon item data"""
+        """Create or update order line from Amazon item data."""
         item_id = amazon_item.get("OrderItemId")
         seller_sku = amazon_item.get("SellerSKU")
 
@@ -786,7 +690,8 @@ class AmazonSaleOrderLine(models.Model):
         quantity_shipped = float(amazon_item.get("QuantityShipped", 0))
         raw_amount = amazon_item.get("ItemPrice", {}).get("Amount", 0)
         try:
-            # Use round() to ensure 2 decimal places and avoid float precision drift
+            # Use round() to ensure 2 decimal places and avoid float
+            # precision drift.
             unit_price = round(float(raw_amount), 2)
         except Exception:
             unit_price = 0.0
@@ -803,7 +708,7 @@ class AmazonSaleOrderLine(models.Model):
             line_vals["product_uom"] = product.uom_id.id
 
         # If no product was found, create a non-accountable note line to
-        # satisfy sale order line constraints while still storing Amazon metadata
+        # satisfy sale order line constraints while storing Amazon metadata
         if not product:
             line_vals.update(
                 {
@@ -844,7 +749,7 @@ class AmazonSaleOrderLine(models.Model):
             line.order_id = line.amazon_order_id
 
     def _get_product_by_sku(self, shop, seller_sku):
-        """Find product by Amazon SKU"""
+        """Find product by Amazon SKU."""
         # TODO: Implement product matching logic via amazon.product.binding
         # For now, search by default_code (internal reference)
         return self.env["product.product"].search(

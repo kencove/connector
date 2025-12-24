@@ -1,7 +1,11 @@
+"""Backend configuration for Amazon SP-API."""
+
 from odoo import api, fields, models
 
 
 class AmazonBackend(models.Model):
+    """Backend settings and SP-API helpers."""
+
     _name = "amazon.backend"
     _inherit = "connector.backend"
     _description = "Amazon SP-API Backend"
@@ -17,7 +21,11 @@ class AmazonBackend(models.Model):
     )
     seller_id = fields.Char(required=True, string="Seller ID")
     region = fields.Selection(
-        selection=[("na", "North America"), ("eu", "Europe"), ("fe", "Far East")],
+        selection=[
+            ("na", "North America"),
+            ("eu", "Europe"),
+            ("fe", "Far East"),
+        ],
         required=True,
         default="na",
     )
@@ -69,7 +77,7 @@ class AmazonBackend(models.Model):
         return "https://api.amazon.com/auth/o2/token"
 
     def _get_sp_api_endpoint(self):
-        """Get SP-API endpoint based on region"""
+        """Get SP-API endpoint based on region."""
         self.ensure_one()
         endpoints = {
             "na": "https://sellingpartnerapi-na.amazon.com",
@@ -79,7 +87,7 @@ class AmazonBackend(models.Model):
         return self.endpoint or endpoints.get(self.region)
 
     def _refresh_access_token(self):
-        """Refresh LWA access token using refresh token"""
+        """Refresh LWA access token using refresh token."""
         self.ensure_one()
         from datetime import datetime, timedelta
 
@@ -113,7 +121,7 @@ class AmazonBackend(models.Model):
             raise UserError(f"Failed to refresh LWA access token: {str(e)}") from e
 
     def _get_access_token(self):
-        """Get valid access token, refreshing if necessary"""
+        """Get valid access token, refreshing if necessary."""
         self.ensure_one()
         from datetime import datetime
 
@@ -126,8 +134,31 @@ class AmazonBackend(models.Model):
 
         return self.access_token
 
+    def _get_sp_api_credentials(self):
+        """Return credentials dict for python-amazon-sp-api.
+
+        The connector stores LWA and AWS role information; this maps those
+        fields to the expected keys by the `sp_api` library. Some deployments
+        may also require AWS access keys via environment or configuration.
+        """
+        self.ensure_one()
+        creds = {
+            "refresh_token": self.lwa_refresh_token,
+            "lwa_app_id": self.lwa_client_id,
+            "lwa_client_secret": self.lwa_client_secret,
+        }
+        if self.aws_role_arn:
+            creds["role_arn"] = self.aws_role_arn
+        if self.aws_external_id:
+            creds["role_session_name"] = self.aws_external_id
+        return creds
+
     def _call_sp_api(self, method, endpoint, params=None, json_data=None):
-        """Make authenticated SP-API call"""
+        """Make authenticated SP-API call via raw HTTP.
+
+        This remains as a fallback path when the `sp_api` library is not
+        available or for endpoints not yet migrated.
+        """
         self.ensure_one()
         import requests
 
@@ -154,13 +185,13 @@ class AmazonBackend(models.Model):
             return response.json()
         except requests.exceptions.HTTPError as e:
             raise UserError(
-                f"SP-API HTTP Error: {e.response.status_code} - {e.response.text}"
+                f"SP-API HTTP Error: {e.response.status_code} - " f"{e.response.text}"
             ) from e
         except Exception as e:
             raise UserError(f"SP-API Call Failed: {str(e)}") from e
 
     def action_test_connection(self):
-        """Test SP-API connection by fetching marketplace participations"""
+        """Test SP-API connection by fetching marketplace participations."""
         self.ensure_one()
 
         try:
@@ -223,7 +254,7 @@ class AmazonBackend(models.Model):
                 "tag": "display_notification",
                 "params": {
                     "title": "No Marketplaces",
-                    "message": "No marketplace participations returned by SP-API.",
+                    "message": ("No marketplace participations returned by SP-API."),
                     "type": "warning",
                     "sticky": False,
                 },
@@ -247,7 +278,10 @@ class AmazonBackend(models.Model):
 
             currency = False
             if currency_code:
-                currency = Currency.search([("name", "=", currency_code)], limit=1)
+                currency = Currency.search(
+                    [("name", "=", currency_code)],
+                    limit=1,
+                )
 
             vals = {
                 "name": name,
@@ -263,7 +297,7 @@ class AmazonBackend(models.Model):
             # Prefer the already-linked marketplaces to avoid missing the
             # record when the database search ignores an unflushed cache.
             existing = self.marketplace_ids.filtered(
-                lambda m: m.marketplace_id == marketplace_id
+                lambda m, mkt_id=marketplace_id: m.marketplace_id == mkt_id
             )
             if not existing:
                 existing = Marketplace.search(
@@ -297,7 +331,7 @@ class AmazonBackend(models.Model):
             "tag": "display_notification",
             "params": {
                 "title": "Marketplaces Synced",
-                "message": f"Created {created}, updated {updated} marketplace(s).",
+                "message": (f"Created {created}, updated {updated} marketplace(s)."),
                 "type": "success",
                 "sticky": False,
             },
