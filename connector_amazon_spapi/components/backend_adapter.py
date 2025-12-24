@@ -64,7 +64,7 @@ class AmazonOrdersAdapter(AmazonBaseAdapter):
             dict: API response with OrderItems list and NextToken
         """
         params = {"NextToken": next_token} if next_token else None
-        endpoint = f"/orders/v0/orders/{amazon_order_id}/orderitems"
+        endpoint = f"/orders/v0/orders/{amazon_order_id}/orderItems"
         return self._call_api("GET", endpoint, params=params)
 
     def get_order(self, amazon_order_id):
@@ -370,7 +370,7 @@ class AmazonListingsAdapter(AmazonBaseAdapter):
     _name = "amazon.listings.adapter"
     _usage = "listings.adapter"
 
-    def get_listings_item(self, seller_sku, marketplace_ids, included_data=None):
+    def get_listings_item(self, marketplace_ids, included_data=None):
         """Get seller's listing for a SKU
 
         Args:
@@ -387,7 +387,8 @@ class AmazonListingsAdapter(AmazonBaseAdapter):
             params["includedData"] = ",".join(included_data)
 
         endpoint = (
-            f"/listings/2021-08-01/items/{self.backend_record.seller_id}/{seller_sku}"
+            "/listings/2021-08-01/items/"
+            f"{self.backend_record.seller_id}/{self.backend_record.seller_sku}"
         )
         return self._call_api("GET", endpoint, params=params)
 
