@@ -256,32 +256,73 @@ class TestAmazonCompetitivePrice(common.CommonConnectorAmazonSpapi):
     def test_unique_constraint(self):
         """Test unique constraint on competitive price
         (use unique values, fail only on true duplicate)"""
-        import time
+        import uuid
 
         from psycopg2 import IntegrityError
 
-        # Create first record
-        first_record = self._create_competitive_price(
-            competitive_price_id="test-id-unique-constraint-1"
+        # Generate a unique test ASIN to avoid conflicts with leftover data
+        test_asin = f"B{uuid.uuid4().hex[:9].upper()}"
+        
+        # Create a fresh product binding for this test to avoid conflicts
+        unique_binding = self._create_product_binding(
+            seller_sku=f"TEST-SKU-UNIQUE-{uuid.uuid4().hex[:8]}",
+            asin=test_asin,
+        )
+
+        # Generate unique IDs to avoid conflicts with previous test runs
+        unique_id_1 = f"test-unique-constraint-{uuid.uuid4().hex}"
+        unique_id_2 = f"test-unique-constraint-{uuid.uuid4().hex}"
+
+        # Create first record with the fresh binding
+        first_record = self.env["amazon.competitive.price"].create(
+            {
+                "product_binding_id": unique_binding.id,
+                "asin": test_asin,
+                "marketplace_id": self.marketplace.id,
+                "competitive_price_id": unique_id_1,
+                "fetch_date": datetime.now(),
+                "listing_price": 89.99,
+                "shipping_price": 5.00,
+                "landed_price": 94.99,
+                "currency_id": self.env.company.currency_id.id,
+                "condition": "New",
+                "offer_type": "BuyBox",
+                "is_buy_box_winner": True,
+                "number_of_offers_new": 5,
+                "number_of_offers_used": 2,
+            }
         )
         test_fetch_date = first_record.fetch_date
         test_competitive_price_id = first_record.competitive_price_id
 
         # Create a second record with a different competitive_price_id
         # (should succeed)
-        self._create_competitive_price(
-            competitive_price_id="test-id-unique-constraint-2",
-            fetch_date=test_fetch_date,
+        self.env["amazon.competitive.price"].create(
+            {
+                "product_binding_id": unique_binding.id,
+                "asin": test_asin,
+                "marketplace_id": self.marketplace.id,
+                "competitive_price_id": unique_id_2,
+                "fetch_date": test_fetch_date,
+                "listing_price": 89.99,
+                "currency_id": self.env.company.currency_id.id,
+            }
         )
 
         # Try to create duplicate with exact same values
         # - should raise IntegrityError
-        time.sleep(0.001)  # 1ms delay to ensure different timestamp in helper
         with self.assertRaises(IntegrityError):
             with self.env.cr.savepoint():
-                self._create_competitive_price(
-                    competitive_price_id=test_competitive_price_id,
-                    fetch_date=test_fetch_date,
+                self.env["amazon.competitive.price"].create(
+                    {
+                        "product_binding_id": unique_binding.id,
+                        "asin": test_asin,
+                        "marketplace_id": self.marketplace.id,
+                        "competitive_price_id": test_competitive_price_id,
+                        "fetch_date": test_fetch_date,
+                        "listing_price": 89.99,
+                        "currency_id": self.env.company.currency_id.id,
+                    }
                 )
 
 
