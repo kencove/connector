@@ -1,7 +1,4 @@
-# Copyright 2026 Kencove
-# License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl.html)
-
-{
+{  # noqa: B018
     "name": "Amazon SP-API Connector",
     "version": "16.0.1.0.0",
     "category": "Connector",
@@ -29,11 +26,13 @@
         "views/competitive_price_view.xml",
         "views/order_view.xml",
         "views/feed_view.xml",
+        "views/notification_log_view.xml",
         "views/amazon_menu.xml",
     ],
     "external_dependencies": {
         "python": [
             "requests",
+            "cryptography",
         ],
     },
     "installable": True,

@@ -316,3 +316,144 @@ class TestOrderAdapterIntegration(common.CommonConnectorAmazonSpapi):
 
         # Should have called adapter method
         mock_get_order_items.assert_called_once_with("111-1111111-1111111")
+
+
+@tagged("post_install", "-at_install")
+class TestReportsAdapter(common.CommonConnectorAmazonSpapi):
+    """Tests for Amazon Reports API adapter"""
+
+    def test_reports_adapter_create_report(self):
+        """Test ReportsAdapter.create_report calls backend correctly"""
+        with self.backend.work_on("amazon.product.binding") as work:
+            adapter = work.component(usage="reports.adapter")
+
+            with mock.patch(
+                "odoo.addons.connector_amazon_spapi.models.backend.AmazonBackend._call_sp_api",
+                return_value={"reportId": "report-123"},
+            ) as mock_call:
+                result = adapter.create_report(
+                    report_type="GET_MERCHANT_LISTINGS_ALL_DATA",
+                    marketplace_ids=["ATVPDKIKX0DER"],
+                )
+
+                mock_call.assert_called_once()
+                call_args = mock_call.call_args
+                self.assertEqual(call_args[0][0], "POST")
+                self.assertIn("/reports/2021-06-30/reports", call_args[0][1])
+                self.assertEqual(
+                    call_args[1]["json_data"]["reportType"],
+                    "GET_MERCHANT_LISTINGS_ALL_DATA",
+                )
+                self.assertEqual(result.get("reportId"), "report-123")
+
+    def test_reports_adapter_create_report_with_date_range(self):
+        """Test ReportsAdapter.create_report with date range parameters"""
+        with self.backend.work_on("amazon.product.binding") as work:
+            adapter = work.component(usage="reports.adapter")
+
+            with mock.patch(
+                "odoo.addons.connector_amazon_spapi.models.backend.AmazonBackend._call_sp_api",
+                return_value={"reportId": "report-456"},
+            ) as mock_call:
+                adapter.create_report(
+                    report_type="GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE",
+                    marketplace_ids=["ATVPDKIKX0DER"],
+                    data_start_time="2025-01-01T00:00:00Z",
+                    data_end_time="2025-12-31T23:59:59Z",
+                )
+
+                call_args = mock_call.call_args
+                json_data = call_args[1]["json_data"]
+                self.assertIn("dataStartTime", json_data)
+                self.assertIn("dataEndTime", json_data)
+
+    def test_reports_adapter_get_report(self):
+        """Test ReportsAdapter.get_report calls backend correctly"""
+        with self.backend.work_on("amazon.product.binding") as work:
+            adapter = work.component(usage="reports.adapter")
+
+            with mock.patch(
+                "odoo.addons.connector_amazon_spapi.models.backend.AmazonBackend._call_sp_api",
+                return_value={
+                    "reportId": "report-123",
+                    "processingStatus": "DONE",
+                    "reportDocumentId": "doc-456",
+                },
+            ) as mock_call:
+                result = adapter.get_report("report-123")
+
+                mock_call.assert_called_once()
+                call_args = mock_call.call_args
+                self.assertEqual(call_args[0][0], "GET")
+                self.assertIn("report-123", call_args[0][1])
+                self.assertEqual(result.get("processingStatus"), "DONE")
+
+    def test_reports_adapter_get_report_document(self):
+        """Test ReportsAdapter.get_report_document calls backend correctly"""
+        with self.backend.work_on("amazon.product.binding") as work:
+            adapter = work.component(usage="reports.adapter")
+
+            with mock.patch(
+                "odoo.addons.connector_amazon_spapi.models.backend.AmazonBackend._call_sp_api",
+                return_value={
+                    "reportDocumentId": "doc-456",
+                    "url": "https://example.com/download",
+                    "compressionAlgorithm": "GZIP",
+                },
+            ) as mock_call:
+                result = adapter.get_report_document("doc-456")
+
+                mock_call.assert_called_once()
+                call_args = mock_call.call_args
+                self.assertEqual(call_args[0][0], "GET")
+                self.assertIn("documents", call_args[0][1])
+                self.assertIn("doc-456", call_args[0][1])
+                self.assertIn("url", result)
+
+    def test_reports_adapter_get_reports_list(self):
+        """Test ReportsAdapter.get_reports calls backend correctly"""
+        with self.backend.work_on("amazon.product.binding") as work:
+            adapter = work.component(usage="reports.adapter")
+
+            with mock.patch(
+                "odoo.addons.connector_amazon_spapi.models.backend.AmazonBackend._call_sp_api",
+                return_value={"reports": []},
+            ) as mock_call:
+                adapter.get_reports(
+                    report_types=["GET_MERCHANT_LISTINGS_ALL_DATA"],
+                    processing_statuses=["DONE"],
+                    marketplace_ids=["ATVPDKIKX0DER"],
+                )
+
+                mock_call.assert_called_once()
+                call_args = mock_call.call_args
+                self.assertEqual(call_args[0][0], "GET")
+                params = call_args[1]["params"]
+                self.assertIn("reportTypes", params)
+                self.assertIn("processingStatuses", params)
+
+    def test_reports_adapter_cancel_report(self):
+        """Test ReportsAdapter.cancel_report calls backend correctly"""
+        with self.backend.work_on("amazon.product.binding") as work:
+            adapter = work.component(usage="reports.adapter")
+
+            with mock.patch(
+                "odoo.addons.connector_amazon_spapi.models.backend.AmazonBackend._call_sp_api",
+                return_value={},
+            ) as mock_call:
+                adapter.cancel_report("report-123")
+
+                mock_call.assert_called_once()
+                call_args = mock_call.call_args
+                self.assertEqual(call_args[0][0], "DELETE")
+                self.assertIn("report-123", call_args[0][1])
+
+    def test_reports_adapter_report_types_constant(self):
+        """Test ReportsAdapter has REPORT_TYPES constant"""
+        with self.backend.work_on("amazon.product.binding") as work:
+            adapter = work.component(usage="reports.adapter")
+
+            self.assertIn("listings_all", adapter.REPORT_TYPES)
+            self.assertEqual(
+                adapter.REPORT_TYPES["listings_all"], "GET_MERCHANT_LISTINGS_ALL_DATA"
+            )

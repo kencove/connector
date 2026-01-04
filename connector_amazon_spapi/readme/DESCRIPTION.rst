@@ -1,3 +1,35 @@
+=============================================
+Amazon SP-API Connector
+=============================================
+
+.. |badge1| image:: https://img.shields.io/badge/License-LGPL3-blue.svg
+    :target: https://www.gnu.org/licenses/lgpl-3.0-standalone.html
+    :alt: License: LGPL-3
+
+.. |badge2| image:: https://img.shields.io/badge/Odoo-16.0-green.svg
+    :target: https://www.odoo.com
+    :alt: Odoo 16.0
+
+|badge1| |badge2|
+
+**Amazon SP-API Connector** integrates Odoo with Amazon Seller Central via the Selling Partner API (SP-API)
+for automated order import, inventory synchronization, and pricing management across multiple Amazon marketplaces.
+
+Features
+========
+
+* **Order Import**: Automatic fetching and syncing of Amazon orders with pagination support
+* **Multi-Marketplace Support**: Handle multiple Amazon marketplaces (NA, EU, FE regions)
+* **Secure Authentication**: LWA (Login with Amazon) token management with automatic refresh
+* **Asynchronous Processing**: Queue-based order sync via queue_job to prevent blocking
+* **Intelligent Product Matching**: Automatic matching of Amazon SKUs to Odoo products
+* **Stock Management**: Foundation for inventory push to Amazon FBA/FBM
+* **Comprehensive Testing**: 47+ unit tests with 100% mock coverage (zero external API calls)
+* **OCA Compliance**: Follows Odoo Community Association best practices
+
+Core Capabilities
+=================
+
 Order Management
 ----------------
 
@@ -18,6 +50,36 @@ Authentication & API Integration
 * Custom endpoint support for testing and alternative regions
 * Comprehensive error handling with user-friendly error messages
 * Connection testing via marketplace metadata API verification
+
+Architecture
+============
+
+Module Structure
+----------------
+
+::
+
+    connector_amazon_spapi/
+    ├── models/                    # Core data models
+    │   ├── backend.py            # Amazon backend configuration and auth
+    │   ├── marketplace.py         # Marketplace definitions
+    │   ├── shop.py               # Shop-level sync configuration
+    │   ├── product_binding.py    # Product to ASIN/SKU mapping
+    │   ├── order.py              # Order binding and line items
+    │   └── feed.py               # Feed tracking for stock/price push
+    ├── components/                # Connector components
+    │   ├── binder.py             # Key binding management
+    │   ├── adapters.py           # API request adapters
+    │   └── mappers.py            # Data transformation mappers
+    ├── security/
+    │   └── ir.model.access.csv   # Access control
+    ├── views/                     # UI forms and lists
+    ├── tests/                     # Comprehensive test suite
+    │   ├── common.py             # Shared test fixtures
+    │   ├── test_backend.py       # Backend (17 tests)
+    │   ├── test_shop.py          # Shop sync (14 tests)
+    │   └── test_order.py         # Order import (16 tests)
+    └── README.rst                 # This file
 
 Test Suite Overview
 ===================

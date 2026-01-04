@@ -55,4 +55,12 @@
         sequence="60"
         groups="connector.group_connector_manager"
     />
+    <menuitem
+        id="menu_amazon_notification_log"
+        name="Notification Logs"
+        parent="menu_amazon_root"
+        action="action_amazon_notification_log"
+        sequence="70"
+        groups="connector.group_connector_manager"
+    />
 </odoo>

@@ -30,10 +30,17 @@
             <form string="Amazon Shop">
                 <header>
                     <button
+                        name="action_sync_catalog_bulk"
+                        string="Bulk Catalog Sync (Reports)"
+                        type="object"
+                        class="btn-primary"
+                        title="Fetch all listings via Reports API and create product bindings"
+                    />
+                    <button
                         name="action_sync_catalog"
                         string="Sync Catalog"
                         type="object"
-                        class="btn-primary"
+                        class="btn-secondary"
                     />
                     <button
                         name="action_sync_orders"
@@ -78,12 +85,14 @@
                             attrs="{'invisible': [('import_orders', '=', False)]}"
                         />
                         <field name="sync_price" />
+                        <field name="catalog_sync_interval" />
                         <field name="include_afn" />
                         <field name="stock_policy" />
                         <field name="order_sync_lookback_days" />
                         <field name="last_order_sync" readonly="1" />
                         <field name="last_stock_sync" readonly="1" />
                         <field name="last_price_sync" readonly="1" />
+                        <field name="last_catalog_sync" readonly="1" />
                         <field name="active" />
                     </group>
                     <group string="Extra Routing Line">

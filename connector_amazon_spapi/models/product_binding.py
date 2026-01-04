@@ -85,11 +85,6 @@ class AmazonProductBinding(models.Model):
                 asins=[self.asin],
             )
 
-        # Normalize SP-API response
-        if isinstance(result, dict):
-            result = result.get("payload", [])
-        else:
-            result = result
         if not result or not isinstance(result, list):
             raise UserError(_("No competitive pricing data returned from Amazon API."))
 
@@ -117,30 +112,16 @@ class AmazonProductBinding(models.Model):
                 }
             )
 
-        # Update or create competitive price records
-        CompetitivePrice = self.env["amazon.competitive.price"]
-        updated_count = 0
-        for vals in competitive_price_vals_list:
-            domain = [
-                ("product_binding_id", "=", self.id),
-                ("asin", "=", vals.get("asin")),
-                ("marketplace_id", "=", vals.get("marketplace_id")),
-                ("competitive_price_id", "=", vals.get("competitive_price_id")),
-            ]
-            existing = CompetitivePrice.search(domain, limit=1)
-            if existing:
-                existing.write(vals)
-            else:
-                CompetitivePrice.create(vals)
-            updated_count += 1
+        # Create competitive price records
+        self.env["amazon.competitive.price"].create(competitive_price_vals_list)
 
         return {
             "type": "ir.actions.client",
             "tag": "display_notification",
             "params": {
                 "title": _("Success"),
-                "message": _("%d competitive price(s) fetched/updated successfully")
-                % updated_count,
+                "message": _("%d competitive price(s) fetched successfully")
+                % len(competitive_price_vals_list),
                 "type": "success",
             },
         }

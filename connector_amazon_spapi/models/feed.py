@@ -89,25 +89,17 @@ class AmazonFeed(models.Model):
         try:
             self.write({"state": "submitting", "last_status_update": datetime.now()})
 
-            # Use adapter for API calls via work_on context
-            with self.backend_id.work_on("amazon.feed") as work:
-                adapter = work.component(usage="feed.adapter")
+            # Step 1: Create feed document to get upload destination
+            create_doc_response = self._create_feed_document()
+            feed_document_id = create_doc_response.get("feedDocumentId")
+            upload_url = create_doc_response.get("url")
 
-                # Step 1: Create feed document to get upload destination
-                create_doc_response = adapter.create_feed_document()
-                feed_document_id = create_doc_response.get("feedDocumentId")
-                upload_url = create_doc_response.get("url")
+            # Step 2: Upload feed content to the presigned URL
+            self._upload_feed_content(upload_url)
 
-                # Step 2: Upload feed content to the presigned URL
-                self._upload_feed_content(upload_url)
-
-                # Step 3: Create the feed
-                feed_response = adapter.create_feed(
-                    feed_type=self.feed_type,
-                    feed_document_id=feed_document_id,
-                    marketplace_ids=[self.marketplace_id.marketplace_id],
-                )
-                self.external_feed_id = feed_response.get("feedId")
+            # Step 3: Create the feed
+            feed_response = self._create_feed(feed_document_id)
+            self.external_feed_id = feed_response.get("feedId")
 
             self.write(
                 {
@@ -132,6 +124,21 @@ class AmazonFeed(models.Model):
             )
             raise
 
+    def _create_feed_document(self):
+        """Create feed document and get upload URL.
+
+        POST /feeds/2021-06-30/documents
+        """
+        endpoint = "/feeds/2021-06-30/documents"
+        payload = {"contentType": "text/xml; charset=UTF-8"}
+
+        return self.backend_id._call_sp_api(
+            method="POST",
+            endpoint=endpoint,
+            marketplace_id=self.marketplace_id.marketplace_id,
+            payload=payload,
+        )
+
     def _upload_feed_content(self, upload_url):
         """Upload feed XML content to presigned S3 URL.
 
@@ -149,6 +156,28 @@ class AmazonFeed(models.Model):
         )
         response.raise_for_status()
 
+    def _create_feed(self, feed_document_id):
+        """Create the feed with Amazon.
+
+        POST /feeds/2021-06-30/feeds
+
+        Args:
+            feed_document_id: ID from create feed document response
+        """
+        endpoint = "/feeds/2021-06-30/feeds"
+        payload = {
+            "feedType": self.feed_type,
+            "marketplaceIds": [self.marketplace_id.marketplace_id],
+            "inputFeedDocumentId": feed_document_id,
+        }
+
+        return self.backend_id._call_sp_api(
+            method="POST",
+            endpoint=endpoint,
+            marketplace_id=self.marketplace_id.marketplace_id,
+            payload=payload,
+        )
+
     def check_feed_status(self):
         """Check feed processing status and update state.
 
@@ -160,10 +189,12 @@ class AmazonFeed(models.Model):
             raise UserError(_("No external feed ID to check status"))
 
         try:
-            # Use adapter for API calls via work_on context
-            with self.backend_id.work_on("amazon.feed") as work:
-                adapter = work.component(usage="feed.adapter")
-                response = adapter.get_feed(self.external_feed_id)
+            endpoint = f"/feeds/2021-06-30/feeds/{self.external_feed_id}"
+            response = self.backend_id._call_sp_api(
+                method="GET",
+                endpoint=endpoint,
+                marketplace_id=self.marketplace_id.marketplace_id,
+            )
 
             processing_status = response.get("processingStatus")
 

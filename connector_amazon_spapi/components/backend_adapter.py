@@ -101,12 +101,10 @@ class AmazonPricingAdapter(AmazonBaseAdapter):
             if len(asins) > 20:
                 raise ValueError("Amazon enforces a maximum of 20 ASINs per request")
             params["Asins"] = ",".join(asins)
-            params["ItemType"] = "Asin"
         elif skus:
             if len(skus) > 20:
                 raise ValueError("Amazon enforces a maximum of 20 SKUs per request")
             params["Skus"] = ",".join(skus)
-            params["ItemType"] = "Sku"
 
         return self._call_api(
             "GET", "/products/pricing/v0/competitivePrice", params=params
@@ -368,35 +366,282 @@ class AmazonCatalogAdapter(AmazonBaseAdapter):
         return self._call_api("GET", endpoint, params=params)
 
 
+class AmazonReportsAdapter(AmazonBaseAdapter):
+    """Adapter for Amazon Reports API.
+
+    The Reports API allows requesting bulk data exports for inventory,
+    orders, returns, and more. This is essential for initial sync of
+    binding tables.
+
+    Ref: https://developer-docs.amazon.com/sp-api/docs/reports-api-v2021-06-30-reference
+    """
+
+    _name = "amazon.reports.adapter"
+    _usage = "reports.adapter"
+
+    # Common report types for seller data
+    REPORT_TYPES = {
+        "listings_all": "GET_MERCHANT_LISTINGS_ALL_DATA",
+        "listings_active": "GET_MERCHANT_LISTINGS_DATA",
+        "listings_open": "GET_FLAT_FILE_OPEN_LISTINGS_DATA",
+        "fba_inventory": "GET_AFN_INVENTORY_DATA",
+        "fba_inventory_all": "GET_FBA_MYI_ALL_INVENTORY_DATA",
+        "orders_all": "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE",
+        "returns": "GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE",
+    }
+
+    def create_report(
+        self,
+        report_type,
+        marketplace_ids,
+        data_start_time=None,
+        data_end_time=None,
+        report_options=None,
+    ):
+        """Request generation of a report.
+
+        Args:
+            report_type: Amazon report type (e.g., GET_MERCHANT_LISTINGS_ALL_DATA)
+            marketplace_ids: List of marketplace IDs
+            data_start_time: Optional ISO 8601 start time for date-ranged reports
+            data_end_time: Optional ISO 8601 end time for date-ranged reports
+            report_options: Optional dict of report-specific options
+
+        Returns:
+            dict: Response with reportId
+        """
+        payload = {
+            "reportType": report_type,
+            "marketplaceIds": marketplace_ids,
+        }
+
+        if data_start_time:
+            payload["dataStartTime"] = data_start_time
+        if data_end_time:
+            payload["dataEndTime"] = data_end_time
+        if report_options:
+            payload["reportOptions"] = report_options
+
+        return self._call_api("POST", "/reports/2021-06-30/reports", json_data=payload)
+
+    def get_report(self, report_id):
+        """Get report status and details.
+
+        Args:
+            report_id: Amazon report ID
+
+        Returns:
+            dict: Report details including processingStatus and reportDocumentId
+        """
+        endpoint = f"/reports/2021-06-30/reports/{report_id}"
+        return self._call_api("GET", endpoint)
+
+    def get_report_document(self, report_document_id):
+        """Get report document download URL.
+
+        Args:
+            report_document_id: Document ID from completed report
+
+        Returns:
+            dict: Response with url for download (may be compressed)
+        """
+        endpoint = f"/reports/2021-06-30/documents/{report_document_id}"
+        return self._call_api("GET", endpoint)
+
+    def cancel_report(self, report_id):
+        """Cancel a report request.
+
+        Args:
+            report_id: Amazon report ID
+
+        Returns:
+            dict: Cancellation response
+        """
+        endpoint = f"/reports/2021-06-30/reports/{report_id}"
+        return self._call_api("DELETE", endpoint)
+
+    def get_reports(
+        self,
+        report_types=None,
+        processing_statuses=None,
+        marketplace_ids=None,
+        page_size=10,
+        next_token=None,
+    ):
+        """List reports with optional filters.
+
+        Args:
+            report_types: List of report types to filter
+            processing_statuses: List of statuses (IN_QUEUE, IN_PROGRESS, DONE, etc.)
+            marketplace_ids: List of marketplace IDs
+            page_size: Number of results per page (max 100)
+            next_token: Pagination token
+
+        Returns:
+            dict: List of reports with pagination
+        """
+        params = {"pageSize": min(page_size, 100)}
+
+        if report_types:
+            params["reportTypes"] = ",".join(report_types)
+        if processing_statuses:
+            params["processingStatuses"] = ",".join(processing_statuses)
+        if marketplace_ids:
+            params["marketplaceIds"] = ",".join(marketplace_ids)
+        if next_token:
+            params["nextToken"] = next_token
+
+        return self._call_api("GET", "/reports/2021-06-30/reports", params=params)
+
+
+class AmazonNotificationsAdapter(AmazonBaseAdapter):
+    """Adapter for Amazon SP-API Notifications API.
+
+    Manages notification subscriptions and destinations for real-time
+    event updates via Amazon SNS.
+
+    Ref: https://developer-docs.amazon.com/sp-api/docs/notifications-api-v1-reference
+    """
+
+    _name = "amazon.notifications.adapter"
+    _usage = "notifications.adapter"
+
+    # Available notification types
+    NOTIFICATION_TYPES = {
+        "order_change": "ORDER_CHANGE",
+        "listings_change": "LISTINGS_ITEM_STATUS_CHANGE",
+        "mfn_quantity": "LISTINGS_ITEM_MFN_QUANTITY_CHANGE",
+        "fba_inventory": "FBA_INVENTORY_AVAILABILITY_CHANGES",
+        "feed_finished": "FEED_PROCESSING_FINISHED",
+        "report_finished": "REPORT_PROCESSING_FINISHED",
+        "pricing_health": "PRICING_HEALTH",
+        "product_type": "PRODUCT_TYPE_DEFINITIONS_CHANGE",
+    }
+
+    def get_subscription(self, notification_type):
+        """Get subscription for a notification type.
+
+        Args:
+            notification_type: Amazon notification type (e.g., ORDER_CHANGE)
+
+        Returns:
+            dict: Subscription details or empty if not subscribed
+        """
+        endpoint = f"/notifications/v1/subscriptions/{notification_type}"
+        return self._call_api("GET", endpoint)
+
+    def create_subscription(self, notification_type, destination_id, payload_version=None):
+        """Create a subscription to a notification type.
+
+        Args:
+            notification_type: Amazon notification type
+            destination_id: Destination ID from create_destination
+            payload_version: Optional payload version (e.g., "1.0")
+
+        Returns:
+            dict: Subscription details with subscriptionId
+        """
+        endpoint = "/notifications/v1/subscriptions"
+        payload = {
+            "notificationType": notification_type,
+            "destinationId": destination_id,
+        }
+
+        if payload_version:
+            payload["payloadVersion"] = payload_version
+
+        return self._call_api("POST", endpoint, json_data=payload)
+
+    def delete_subscription(self, notification_type, subscription_id):
+        """Delete a subscription.
+
+        Args:
+            notification_type: Amazon notification type
+            subscription_id: Subscription ID to delete
+
+        Returns:
+            dict: Empty response on success
+        """
+        endpoint = f"/notifications/v1/subscriptions/{notification_type}/{subscription_id}"
+        return self._call_api("DELETE", endpoint)
+
+    def get_destinations(self):
+        """Get all notification destinations.
+
+        Returns:
+            dict: List of destinations
+        """
+        return self._call_api("GET", "/notifications/v1/destinations")
+
+    def get_destination(self, destination_id):
+        """Get a specific destination.
+
+        Args:
+            destination_id: Destination ID
+
+        Returns:
+            dict: Destination details
+        """
+        endpoint = f"/notifications/v1/destinations/{destination_id}"
+        return self._call_api("GET", endpoint)
+
+    def create_destination(self, name, arn, resource_type="SQS"):
+        """Create a notification destination.
+
+        For HTTP/HTTPS webhooks, use EventBridge instead of SQS.
+        Amazon SP-API doesn't support direct HTTP endpoints; you need
+        either SQS or EventBridge as intermediary.
+
+        Args:
+            name: Destination name
+            arn: ARN of SQS queue or EventBridge event bus
+            resource_type: "SQS" or "EVENT_BRIDGE"
+
+        Returns:
+            dict: Destination with destinationId
+        """
+        endpoint = "/notifications/v1/destinations"
+
+        if resource_type == "SQS":
+            payload = {
+                "name": name,
+                "resourceSpecification": {
+                    "sqs": {"arn": arn}
+                },
+            }
+        elif resource_type == "EVENT_BRIDGE":
+            payload = {
+                "name": name,
+                "resourceSpecification": {
+                    "eventBridge": {
+                        "accountId": arn.split(":")[4],  # Extract account ID from ARN
+                        "region": arn.split(":")[3],  # Extract region from ARN
+                    }
+                },
+            }
+        else:
+            raise ValueError(f"Unsupported resource type: {resource_type}")
+
+        return self._call_api("POST", endpoint, json_data=payload)
+
+    def delete_destination(self, destination_id):
+        """Delete a notification destination.
+
+        Args:
+            destination_id: Destination ID to delete
+
+        Returns:
+            dict: Empty response on success
+        """
+        endpoint = f"/notifications/v1/destinations/{destination_id}"
+        return self._call_api("DELETE", endpoint)
+
+
 class AmazonListingsAdapter(AmazonBaseAdapter):
     _name = "amazon.listings.adapter"
     _usage = "listings.adapter"
 
-    def get_inventory_summary(
-        self,
-        marketplace_ids,
-        granularityId,
-        sellerSkus=None,
-        details=True,
-        granularityType="Marketplace",
-    ):
-        """Get seller's inventory summary
-
-        Returns:
-            dict: Inventory summary data
-        """
-        endpoint = "/fba/inventory/v1/summaries"
-        params = {
-            "marketplaceIds": ",".join(marketplace_ids),
-            "granularityId": granularityId,
-            "details": details,
-            "granularityType": granularityType,
-        }
-        if sellerSkus:
-            params["sellerSkus"] = ",".join(sellerSkus)
-        return self._call_api("GET", endpoint, params=params)
-
-    def get_listings_item(self, seller_sku, marketplace_ids, included_data=None):
+    def get_listings_item(self, marketplace_ids, included_data=None):
         """Get seller's listing for a SKU
 
         Args:
@@ -414,7 +659,7 @@ class AmazonListingsAdapter(AmazonBaseAdapter):
 
         endpoint = (
             "/listings/2021-08-01/items/"
-            f"{self.backend_record.seller_id}/{seller_sku}"
+            f"{self.backend_record.seller_id}/{self.backend_record.seller_sku}"
         )
         return self._call_api("GET", endpoint, params=params)
 

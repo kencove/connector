@@ -51,4 +51,17 @@
         <field name="doall" eval="False" />
         <field name="active" eval="True" />
     </record>
+
+    <!-- Daily cron job for bulk catalog sync via Reports API -->
+    <record id="ir_cron_sync_catalog_bulk" model="ir.cron">
+        <field name="name">Amazon: Bulk Catalog Sync (Reports)</field>
+        <field name="model_id" ref="model_amazon_shop" />
+        <field name="state">code</field>
+        <field name="code">model.cron_sync_catalog_bulk()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="numbercall">-1</field>
+        <field name="doall" eval="False" />
+        <field name="active" eval="True" />
+    </record>
 </odoo>
