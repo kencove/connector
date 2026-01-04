@@ -26,11 +26,13 @@
         "views/competitive_price_view.xml",
         "views/order_view.xml",
         "views/feed_view.xml",
+        "views/notification_log_view.xml",
         "views/amazon_menu.xml",
     ],
     "external_dependencies": {
         "python": [
             "requests",
+            "cryptography",
         ],
     },
     "installable": True,

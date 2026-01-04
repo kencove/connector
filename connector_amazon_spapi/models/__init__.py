@@ -6,3 +6,4 @@ from . import feed
 from . import order
 from . import backend
 from . import res_partner
+from . import notification_log

@@ -1,4 +1,5 @@
 import logging
+import secrets
 from datetime import datetime, timedelta
 
 import requests
@@ -81,6 +82,101 @@ class AmazonBackend(models.Model):
     # Access Token (temporary, refreshed automatically)
     access_token = fields.Char(readonly=True)
     token_expires_at = fields.Datetime(readonly=True)
+
+    # Webhook Configuration for SP-API Notifications
+    webhook_token = fields.Char(
+        string="Webhook Security Token",
+        default=lambda self: secrets.token_urlsafe(32),
+        help="Secret token used in webhook URL for authentication. Auto-generated.",
+        copy=False,
+    )
+    webhook_url = fields.Char(
+        string="Webhook URL",
+        compute="_compute_webhook_url",
+        help="URL to configure in Amazon SP-API notifications destination.",
+    )
+    webhook_active = fields.Boolean(
+        string="Webhook Active",
+        default=False,
+        help="Enable webhook endpoint to receive real-time notifications.",
+    )
+
+    # Notification Subscriptions
+    notify_order_change = fields.Boolean(
+        string="Order Change Notifications",
+        help="Receive real-time notifications when orders are created or updated.",
+    )
+    notify_listings_change = fields.Boolean(
+        string="Listings Change Notifications",
+        help="Receive notifications when product listings are modified.",
+    )
+    notify_feed_processing = fields.Boolean(
+        string="Feed Processing Notifications",
+        help="Receive notifications when feed processing completes.",
+    )
+    notify_report_processing = fields.Boolean(
+        string="Report Processing Notifications",
+        help="Receive notifications when report generation completes.",
+    )
+
+    # SNS Subscription tracking
+    sns_destination_id = fields.Char(
+        string="SNS Destination ID",
+        readonly=True,
+        help="Amazon SP-API destination ID for this webhook.",
+    )
+    notification_log_ids = fields.One2many(
+        comodel_name="amazon.notification.log",
+        inverse_name="backend_id",
+        string="Notification Logs",
+    )
+    notification_log_count = fields.Integer(
+        string="Notification Count",
+        compute="_compute_notification_log_count",
+    )
+    active = fields.Boolean(default=True)
+
+    @api.depends("webhook_token")
+    def _compute_webhook_url(self):
+        """Compute the full webhook URL for this backend."""
+        base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
+        for record in self:
+            if record.webhook_token:
+                record.webhook_url = f"{base_url}/amazon/webhook/{record.webhook_token}"
+            else:
+                record.webhook_url = False
+
+    def _compute_notification_log_count(self):
+        """Compute count of notification logs."""
+        for record in self:
+            record.notification_log_count = len(record.notification_log_ids)
+
+    def action_view_notification_logs(self):
+        """Open notification logs for this backend."""
+        self.ensure_one()
+        return {
+            "type": "ir.actions.act_window",
+            "name": "Notification Logs",
+            "res_model": "amazon.notification.log",
+            "view_mode": "tree,form",
+            "domain": [("backend_id", "=", self.id)],
+            "context": {"default_backend_id": self.id},
+        }
+
+    def action_regenerate_webhook_token(self):
+        """Generate a new webhook token."""
+        self.ensure_one()
+        self.webhook_token = secrets.token_urlsafe(32)
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "Token Regenerated",
+                "message": "A new webhook token has been generated. Update your Amazon notification destination.",
+                "type": "warning",
+                "sticky": False,
+            },
+        }
 
     @api.model
     def _get_lwa_token_url(self):

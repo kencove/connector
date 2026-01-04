@@ -7,3 +7,4 @@ access_amazon_competitive_price,access_amazon_competitive_price,model_amazon_com
 access_amazon_sale_order,access_amazon_sale_order,model_amazon_sale_order,base.group_system,1,1,1,1
 access_amazon_sale_order_line,access_amazon_sale_order_line,model_amazon_sale_order_line,base.group_system,1,1,1,1
 access_amazon_feed,access_amazon_feed,model_amazon_feed,base.group_system,1,1,1,1
+access_amazon_notification_log,access_amazon_notification_log,model_amazon_notification_log,base.group_system,1,1,1,1

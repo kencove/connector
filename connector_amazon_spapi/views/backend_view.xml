@@ -63,6 +63,19 @@
                         <field name="enable_price_sync" />
                         <field name="enable_stock_sync" />
                     </group>
+                    <group string="Webhook Configuration">
+                        <group>
+                            <field name="webhook_active" widget="boolean_toggle" />
+                            <field name="webhook_url" widget="CopyClipboardChar" attrs="{'invisible': [('webhook_active', '=', False)]}" />
+                            <field name="webhook_token" password="True" attrs="{'invisible': [('webhook_active', '=', False)]}" />
+                        </group>
+                        <group attrs="{'invisible': [('webhook_active', '=', False)]}">
+                            <field name="notify_order_change" />
+                            <field name="notify_listings_change" />
+                            <field name="notify_feed_processing" />
+                            <field name="notify_report_processing" />
+                        </group>
+                    </group>
                     <notebook>
                         <page string="Marketplaces">
                             <field name="marketplace_ids">

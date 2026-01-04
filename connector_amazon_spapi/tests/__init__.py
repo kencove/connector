@@ -5,3 +5,4 @@ from . import test_order
 from . import test_competitive_price
 from . import test_adapters
 from . import test_feed
+from . import test_webhook

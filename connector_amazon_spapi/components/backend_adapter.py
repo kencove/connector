@@ -494,6 +494,149 @@ class AmazonReportsAdapter(AmazonBaseAdapter):
         return self._call_api("GET", "/reports/2021-06-30/reports", params=params)
 
 
+class AmazonNotificationsAdapter(AmazonBaseAdapter):
+    """Adapter for Amazon SP-API Notifications API.
+
+    Manages notification subscriptions and destinations for real-time
+    event updates via Amazon SNS.
+
+    Ref: https://developer-docs.amazon.com/sp-api/docs/notifications-api-v1-reference
+    """
+
+    _name = "amazon.notifications.adapter"
+    _usage = "notifications.adapter"
+
+    # Available notification types
+    NOTIFICATION_TYPES = {
+        "order_change": "ORDER_CHANGE",
+        "listings_change": "LISTINGS_ITEM_STATUS_CHANGE",
+        "mfn_quantity": "LISTINGS_ITEM_MFN_QUANTITY_CHANGE",
+        "fba_inventory": "FBA_INVENTORY_AVAILABILITY_CHANGES",
+        "feed_finished": "FEED_PROCESSING_FINISHED",
+        "report_finished": "REPORT_PROCESSING_FINISHED",
+        "pricing_health": "PRICING_HEALTH",
+        "product_type": "PRODUCT_TYPE_DEFINITIONS_CHANGE",
+    }
+
+    def get_subscription(self, notification_type):
+        """Get subscription for a notification type.
+
+        Args:
+            notification_type: Amazon notification type (e.g., ORDER_CHANGE)
+
+        Returns:
+            dict: Subscription details or empty if not subscribed
+        """
+        endpoint = f"/notifications/v1/subscriptions/{notification_type}"
+        return self._call_api("GET", endpoint)
+
+    def create_subscription(self, notification_type, destination_id, payload_version=None):
+        """Create a subscription to a notification type.
+
+        Args:
+            notification_type: Amazon notification type
+            destination_id: Destination ID from create_destination
+            payload_version: Optional payload version (e.g., "1.0")
+
+        Returns:
+            dict: Subscription details with subscriptionId
+        """
+        endpoint = "/notifications/v1/subscriptions"
+        payload = {
+            "notificationType": notification_type,
+            "destinationId": destination_id,
+        }
+
+        if payload_version:
+            payload["payloadVersion"] = payload_version
+
+        return self._call_api("POST", endpoint, json_data=payload)
+
+    def delete_subscription(self, notification_type, subscription_id):
+        """Delete a subscription.
+
+        Args:
+            notification_type: Amazon notification type
+            subscription_id: Subscription ID to delete
+
+        Returns:
+            dict: Empty response on success
+        """
+        endpoint = f"/notifications/v1/subscriptions/{notification_type}/{subscription_id}"
+        return self._call_api("DELETE", endpoint)
+
+    def get_destinations(self):
+        """Get all notification destinations.
+
+        Returns:
+            dict: List of destinations
+        """
+        return self._call_api("GET", "/notifications/v1/destinations")
+
+    def get_destination(self, destination_id):
+        """Get a specific destination.
+
+        Args:
+            destination_id: Destination ID
+
+        Returns:
+            dict: Destination details
+        """
+        endpoint = f"/notifications/v1/destinations/{destination_id}"
+        return self._call_api("GET", endpoint)
+
+    def create_destination(self, name, arn, resource_type="SQS"):
+        """Create a notification destination.
+
+        For HTTP/HTTPS webhooks, use EventBridge instead of SQS.
+        Amazon SP-API doesn't support direct HTTP endpoints; you need
+        either SQS or EventBridge as intermediary.
+
+        Args:
+            name: Destination name
+            arn: ARN of SQS queue or EventBridge event bus
+            resource_type: "SQS" or "EVENT_BRIDGE"
+
+        Returns:
+            dict: Destination with destinationId
+        """
+        endpoint = "/notifications/v1/destinations"
+
+        if resource_type == "SQS":
+            payload = {
+                "name": name,
+                "resourceSpecification": {
+                    "sqs": {"arn": arn}
+                },
+            }
+        elif resource_type == "EVENT_BRIDGE":
+            payload = {
+                "name": name,
+                "resourceSpecification": {
+                    "eventBridge": {
+                        "accountId": arn.split(":")[4],  # Extract account ID from ARN
+                        "region": arn.split(":")[3],  # Extract region from ARN
+                    }
+                },
+            }
+        else:
+            raise ValueError(f"Unsupported resource type: {resource_type}")
+
+        return self._call_api("POST", endpoint, json_data=payload)
+
+    def delete_destination(self, destination_id):
+        """Delete a notification destination.
+
+        Args:
+            destination_id: Destination ID to delete
+
+        Returns:
+            dict: Empty response on success
+        """
+        endpoint = f"/notifications/v1/destinations/{destination_id}"
+        return self._call_api("DELETE", endpoint)
+
+
 class AmazonListingsAdapter(AmazonBaseAdapter):
     _name = "amazon.listings.adapter"
     _usage = "listings.adapter"
