@@ -36,7 +36,16 @@ class AmazonBackend(models.Model):
     aws_role_arn = fields.Char()
     aws_external_id = fields.Char(string="AWS External ID")
     endpoint = fields.Char(string="SP-API Endpoint")
-    test_mode = fields.Boolean()
+    test_mode = fields.Boolean(
+        string="Sandbox Mode",
+        default=False,
+        help=(
+            "When enabled, API calls include the x-amzn-api-sandbox header "
+            "which triggers Amazon's static sandbox responses. Use this "
+            "to test API integration without affecting live data. "
+            "Requires valid SP-API credentials."
+        ),
+    )
     read_only_mode = fields.Boolean(
         string="Read-Only Mode (Testing)",
         default=False,
@@ -128,7 +137,11 @@ class AmazonBackend(models.Model):
         return self.access_token
 
     def _call_sp_api(self, method, endpoint, params=None, json_data=None):
-        """Make authenticated SP-API call"""
+        """Make authenticated SP-API call.
+
+        When test_mode is enabled, adds the x-amzn-api-sandbox header to
+        trigger Amazon's static sandbox responses instead of live data.
+        """
         self.ensure_one()
         access_token = self._get_access_token()
         url = f"{self._get_sp_api_endpoint()}{endpoint}"
@@ -137,6 +150,14 @@ class AmazonBackend(models.Model):
             "x-amz-access-token": access_token,
             "Content-Type": "application/json",
         }
+
+        if self.test_mode:
+            # Enable Amazon SP-API static sandbox mode
+            # Returns predefined test responses instead of live data
+            headers["x-amzn-api-sandbox"] = "true"
+            _logger.info(
+                "[AmazonBackend] Sandbox mode active for %s %s", method, endpoint
+            )
 
         try:
             response = requests.request(
