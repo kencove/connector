@@ -233,6 +233,240 @@ class AmazonShop(models.Model):
             },
         }
 
+    def action_sync_catalog_bulk(self):
+        """Trigger bulk catalog sync via Reports API in background.
+
+        This uses the GET_MERCHANT_LISTINGS_ALL_DATA report to fetch all
+        active listings and create/update product bindings.
+        """
+        for shop in self:
+            shop.with_delay().sync_catalog_bulk()
+
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": "Bulk Catalog Sync Queued",
+                "message": (
+                    f"Bulk catalog sync job(s) queued for {len(self)} shop(s). "
+                    "This may take several minutes."
+                ),
+                "type": "success",
+                "sticky": False,
+            },
+        }
+
+    def sync_catalog_bulk(self):
+        """Sync all product listings via Reports API.
+
+        This method:
+        1. Requests GET_MERCHANT_LISTINGS_ALL_DATA report
+        2. Polls until report is complete
+        3. Downloads and parses the TSV report
+        4. Creates/updates amazon.product.binding records
+
+        This is the recommended approach for initial sync and periodic
+        full refresh of the product catalog.
+
+        Returns:
+            dict: Summary with created/updated/skipped counts
+        """
+        self.ensure_one()
+        import csv
+        import gzip
+        import io
+        import time
+
+        import requests
+
+        try:
+            marketplace_ids = [self.marketplace_id.marketplace_id]
+
+            # Step 1: Request the report
+            with self.backend_id.work_on("amazon.product.binding") as work:
+                adapter = work.component(usage="reports.adapter")
+
+                _logger.info(
+                    "Requesting GET_MERCHANT_LISTINGS_ALL_DATA report for shop %s",
+                    self.name,
+                )
+
+                response = adapter.create_report(
+                    report_type="GET_MERCHANT_LISTINGS_ALL_DATA",
+                    marketplace_ids=marketplace_ids,
+                )
+
+            report_id = response.get("reportId")
+            if not report_id:
+                raise UserError("Failed to create report: no reportId returned")
+
+            _logger.info("Report requested: %s", report_id)
+
+            # Step 2: Poll for completion (max 10 minutes)
+            max_attempts = 60
+            poll_interval = 10  # seconds
+            report_document_id = None
+
+            for attempt in range(max_attempts):
+                with self.backend_id.work_on("amazon.product.binding") as work:
+                    adapter = work.component(usage="reports.adapter")
+                    status_response = adapter.get_report(report_id)
+
+                processing_status = status_response.get("processingStatus")
+                _logger.info(
+                    "Report %s status: %s (attempt %d/%d)",
+                    report_id,
+                    processing_status,
+                    attempt + 1,
+                    max_attempts,
+                )
+
+                if processing_status == "DONE":
+                    report_document_id = status_response.get("reportDocumentId")
+                    break
+                elif processing_status in ("CANCELLED", "FATAL"):
+                    raise UserError(
+                        f"Report generation failed with status: {processing_status}"
+                    )
+
+                time.sleep(poll_interval)
+
+            if not report_document_id:
+                raise UserError("Report generation timed out after 10 minutes")
+
+            # Step 3: Get download URL and fetch report
+            with self.backend_id.work_on("amazon.product.binding") as work:
+                adapter = work.component(usage="reports.adapter")
+                doc_response = adapter.get_report_document(report_document_id)
+
+            download_url = doc_response.get("url")
+            compression = doc_response.get("compressionAlgorithm")
+
+            if not download_url:
+                raise UserError("No download URL in report document response")
+
+            _logger.info("Downloading report from %s", download_url[:50] + "...")
+
+            # Download the report content
+            report_response = requests.get(download_url, timeout=120)
+            report_response.raise_for_status()
+
+            # Decompress if needed
+            if compression == "GZIP":
+                content = gzip.decompress(report_response.content).decode("utf-8")
+            else:
+                content = report_response.content.decode("utf-8")
+
+            # Step 4: Parse TSV and create bindings
+            result = self._process_listings_report(content)
+
+            _logger.info(
+                "Bulk catalog sync for shop %s: %d created, %d updated, %d skipped",
+                self.name,
+                result["created"],
+                result["updated"],
+                result["skipped"],
+            )
+
+            return result
+
+        except Exception as e:
+            _logger.exception("Failed to sync catalog bulk for shop %s", self.name)
+            raise UserError(f"Bulk catalog sync failed: {str(e)}") from e
+
+    def _process_listings_report(self, content):
+        """Parse listings report TSV and create/update bindings.
+
+        Expected columns (GET_MERCHANT_LISTINGS_ALL_DATA):
+        - seller-sku
+        - asin1
+        - item-name
+        - price
+        - quantity
+        - fulfillment-channel (DEFAULT=MFN, AMAZON_NA/EU/FE=FBA)
+        - status (Active, Inactive, etc.)
+
+        Args:
+            content: TSV content as string
+
+        Returns:
+            dict: Summary with created/updated/skipped counts
+        """
+        import csv
+        import io
+
+        reader = csv.DictReader(io.StringIO(content), delimiter="\t")
+
+        binding_model = self.env["amazon.product.binding"]
+        product_model = self.env["product.product"]
+
+        created = 0
+        updated = 0
+        skipped = 0
+
+        for row in reader:
+            sku = row.get("seller-sku")
+            asin = row.get("asin1")
+            status = row.get("status", "").lower()
+
+            # Skip if no SKU or inactive
+            if not sku:
+                skipped += 1
+                continue
+
+            # Check if binding already exists
+            existing = binding_model.search(
+                [
+                    ("backend_id", "=", self.backend_id.id),
+                    ("seller_sku", "=", sku),
+                ],
+                limit=1,
+            )
+
+            if existing:
+                # Update existing binding
+                vals = {}
+                if asin and asin != existing.asin:
+                    vals["asin"] = asin
+                if self.marketplace_id and existing.marketplace_id != self.marketplace_id:
+                    vals["marketplace_id"] = self.marketplace_id.id
+
+                if vals:
+                    existing.write(vals)
+                updated += 1
+                continue
+
+            # Try to find matching Odoo product by SKU (default_code)
+            product = product_model.search([("default_code", "=", sku)], limit=1)
+
+            if not product:
+                # Log unmapped SKU for manual resolution
+                _logger.warning(
+                    "Listing SKU %s (ASIN: %s) has no matching Odoo product. "
+                    "Create product with default_code=%s to enable sync.",
+                    sku,
+                    asin,
+                    sku,
+                )
+                skipped += 1
+                continue
+
+            # Create new binding
+            binding_model.create(
+                {
+                    "backend_id": self.backend_id.id,
+                    "marketplace_id": self.marketplace_id.id,
+                    "odoo_id": product.id,
+                    "seller_sku": sku,
+                    "asin": asin,
+                    "sync_stock": True,
+                    "sync_price": True,
+                }
+            )
+            created += 1
+
+        return {"created": created, "updated": updated, "skipped": skipped}
+
     def sync_catalog(self):
         """Sync product listings from Amazon Catalog Items API
 

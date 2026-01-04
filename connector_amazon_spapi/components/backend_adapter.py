@@ -366,6 +366,134 @@ class AmazonCatalogAdapter(AmazonBaseAdapter):
         return self._call_api("GET", endpoint, params=params)
 
 
+class AmazonReportsAdapter(AmazonBaseAdapter):
+    """Adapter for Amazon Reports API.
+
+    The Reports API allows requesting bulk data exports for inventory,
+    orders, returns, and more. This is essential for initial sync of
+    binding tables.
+
+    Ref: https://developer-docs.amazon.com/sp-api/docs/reports-api-v2021-06-30-reference
+    """
+
+    _name = "amazon.reports.adapter"
+    _usage = "reports.adapter"
+
+    # Common report types for seller data
+    REPORT_TYPES = {
+        "listings_all": "GET_MERCHANT_LISTINGS_ALL_DATA",
+        "listings_active": "GET_MERCHANT_LISTINGS_DATA",
+        "listings_open": "GET_FLAT_FILE_OPEN_LISTINGS_DATA",
+        "fba_inventory": "GET_AFN_INVENTORY_DATA",
+        "fba_inventory_all": "GET_FBA_MYI_ALL_INVENTORY_DATA",
+        "orders_all": "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE",
+        "returns": "GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE",
+    }
+
+    def create_report(
+        self,
+        report_type,
+        marketplace_ids,
+        data_start_time=None,
+        data_end_time=None,
+        report_options=None,
+    ):
+        """Request generation of a report.
+
+        Args:
+            report_type: Amazon report type (e.g., GET_MERCHANT_LISTINGS_ALL_DATA)
+            marketplace_ids: List of marketplace IDs
+            data_start_time: Optional ISO 8601 start time for date-ranged reports
+            data_end_time: Optional ISO 8601 end time for date-ranged reports
+            report_options: Optional dict of report-specific options
+
+        Returns:
+            dict: Response with reportId
+        """
+        payload = {
+            "reportType": report_type,
+            "marketplaceIds": marketplace_ids,
+        }
+
+        if data_start_time:
+            payload["dataStartTime"] = data_start_time
+        if data_end_time:
+            payload["dataEndTime"] = data_end_time
+        if report_options:
+            payload["reportOptions"] = report_options
+
+        return self._call_api("POST", "/reports/2021-06-30/reports", json_data=payload)
+
+    def get_report(self, report_id):
+        """Get report status and details.
+
+        Args:
+            report_id: Amazon report ID
+
+        Returns:
+            dict: Report details including processingStatus and reportDocumentId
+        """
+        endpoint = f"/reports/2021-06-30/reports/{report_id}"
+        return self._call_api("GET", endpoint)
+
+    def get_report_document(self, report_document_id):
+        """Get report document download URL.
+
+        Args:
+            report_document_id: Document ID from completed report
+
+        Returns:
+            dict: Response with url for download (may be compressed)
+        """
+        endpoint = f"/reports/2021-06-30/documents/{report_document_id}"
+        return self._call_api("GET", endpoint)
+
+    def cancel_report(self, report_id):
+        """Cancel a report request.
+
+        Args:
+            report_id: Amazon report ID
+
+        Returns:
+            dict: Cancellation response
+        """
+        endpoint = f"/reports/2021-06-30/reports/{report_id}"
+        return self._call_api("DELETE", endpoint)
+
+    def get_reports(
+        self,
+        report_types=None,
+        processing_statuses=None,
+        marketplace_ids=None,
+        page_size=10,
+        next_token=None,
+    ):
+        """List reports with optional filters.
+
+        Args:
+            report_types: List of report types to filter
+            processing_statuses: List of statuses (IN_QUEUE, IN_PROGRESS, DONE, etc.)
+            marketplace_ids: List of marketplace IDs
+            page_size: Number of results per page (max 100)
+            next_token: Pagination token
+
+        Returns:
+            dict: List of reports with pagination
+        """
+        params = {"pageSize": min(page_size, 100)}
+
+        if report_types:
+            params["reportTypes"] = ",".join(report_types)
+        if processing_statuses:
+            params["processingStatuses"] = ",".join(processing_statuses)
+        if marketplace_ids:
+            params["marketplaceIds"] = ",".join(marketplace_ids)
+        if next_token:
+            params["nextToken"] = next_token
+
+        return self._call_api("GET", "/reports/2021-06-30/reports", params=params)
+
+
 class AmazonListingsAdapter(AmazonBaseAdapter):
     _name = "amazon.listings.adapter"
     _usage = "listings.adapter"
