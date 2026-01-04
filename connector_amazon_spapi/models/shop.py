@@ -71,6 +71,21 @@ class AmazonShop(models.Model):
         string="Order Sync Frequency",
         help="How often to import orders from Amazon.",
     )
+    catalog_sync_interval = fields.Selection(
+        selection=[
+            ("manual", "Manual Only"),
+            ("daily", "Daily"),
+            ("weekly", "Weekly"),
+        ],
+        default="manual",
+        string="Catalog Sync Frequency",
+        help="How often to sync product listings from Amazon via Reports API.",
+    )
+    last_catalog_sync = fields.Datetime(
+        string="Last Catalog Sync",
+        readonly=True,
+        help="Timestamp of last bulk catalog sync via Reports API.",
+    )
     include_afn = fields.Boolean(
         string="Include AFN Orders",
         help="If enabled, also import Amazon-fulfilled orders.",
@@ -367,6 +382,9 @@ class AmazonShop(models.Model):
                 result["updated"],
                 result["skipped"],
             )
+
+            # Update last sync timestamp
+            self.write({"last_catalog_sync": fields.Datetime.now()})
 
             return result
 
@@ -696,6 +714,51 @@ class AmazonShop(models.Model):
             except Exception:
                 # Let job queue record errors; continue to next shop
                 continue
+
+    @api.model
+    def cron_sync_catalog_bulk(self):
+        """Cron job to sync catalog via Reports API based on shop sync interval.
+
+        - Daily shops: Run every day
+        - Weekly shops: Run on day 0 (Monday) of the week
+        """
+        from datetime import datetime
+
+        today = datetime.now()
+        is_monday = today.weekday() == 0
+
+        # Daily catalog sync
+        daily_shops = self.search(
+            [
+                ("active", "=", True),
+                ("catalog_sync_interval", "=", "daily"),
+            ]
+        )
+        for shop in daily_shops:
+            try:
+                shop.with_delay().sync_catalog_bulk()
+            except Exception:
+                _logger.exception(
+                    "Failed to queue catalog sync for shop %s", shop.name
+                )
+                continue
+
+        # Weekly catalog sync (only on Mondays)
+        if is_monday:
+            weekly_shops = self.search(
+                [
+                    ("active", "=", True),
+                    ("catalog_sync_interval", "=", "weekly"),
+                ]
+            )
+            for shop in weekly_shops:
+                try:
+                    shop.with_delay().sync_catalog_bulk()
+                except Exception:
+                    _logger.exception(
+                        "Failed to queue catalog sync for shop %s", shop.name
+                    )
+                    continue
 
     def push_stock(self):
         """Push stock levels to Amazon via Feeds API"""

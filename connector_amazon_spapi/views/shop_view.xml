@@ -85,12 +85,14 @@
                             attrs="{'invisible': [('import_orders', '=', False)]}"
                         />
                         <field name="sync_price" />
+                        <field name="catalog_sync_interval" />
                         <field name="include_afn" />
                         <field name="stock_policy" />
                         <field name="order_sync_lookback_days" />
                         <field name="last_order_sync" readonly="1" />
                         <field name="last_stock_sync" readonly="1" />
                         <field name="last_price_sync" readonly="1" />
+                        <field name="last_catalog_sync" readonly="1" />
                         <field name="active" />
                     </group>
                     <group string="Extra Routing Line">

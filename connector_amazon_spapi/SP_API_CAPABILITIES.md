@@ -116,10 +116,198 @@ Shop → action_sync_catalog_bulk() → sync_catalog_bulk()
 |----------|---------|
 | `GET /summaries` | FBA inventory summaries |
 
-### Notifications API (`/notifications/v1/`)
-| Endpoint | Purpose |
-|----------|---------|
-| Subscribe to events | Real-time order/inventory updates |
+---
+
+## Notifications API - Implementation Scope
+
+### Overview
+The Amazon SP-API Notifications API enables real-time event-driven updates via Amazon SNS (Simple Notification Service). This eliminates polling and provides instant awareness of order changes, inventory updates, and listing modifications.
+
+### Architecture Requirements
+
+```
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
+│   Amazon SP-API     │────▶│    Amazon SNS       │────▶│   Odoo Webhook      │
+│   Notifications     │     │    Topic            │     │   Endpoint          │
+└─────────────────────┘     └─────────────────────┘     └─────────────────────┘
+                                                                  │
+                                                                  ▼
+                                                        ┌─────────────────────┐
+                                                        │  Queue Job /        │
+                                                        │  Process Event      │
+                                                        └─────────────────────┘
+```
+
+### Components Needed
+
+#### 1. Webhook Controller (`controllers/webhook.py`)
+```python
+class AmazonNotificationController(http.Controller):
+
+    @http.route(
+        '/amazon/webhook/<string:token>',
+        type='json',
+        auth='public',
+        methods=['POST'],
+        csrf=False,
+    )
+    def receive_notification(self, token, **kwargs):
+        """
+        Receive SNS notifications from Amazon.
+
+        Security:
+        - Token in URL validates the request
+        - SNS message signature verification
+        - IP whitelist (optional)
+        """
+        # 1. Validate token against backend.webhook_token
+        # 2. Handle SNS subscription confirmation
+        # 3. Verify SNS message signature
+        # 4. Parse notification type and dispatch
+        # 5. Queue background job for processing
+```
+
+#### 2. Backend Fields (`models/backend.py`)
+```python
+# Webhook configuration
+webhook_token = fields.Char(
+    string="Webhook Security Token",
+    default=lambda self: secrets.token_urlsafe(32),
+    help="Secret token for webhook URL authentication",
+)
+webhook_url = fields.Char(
+    string="Webhook URL",
+    compute="_compute_webhook_url",
+    help="URL to configure in Amazon SP-API notifications",
+)
+sns_subscription_arn = fields.Char(
+    string="SNS Subscription ARN",
+    readonly=True,
+)
+
+# Notification subscriptions
+notify_order_change = fields.Boolean(
+    string="Order Change Notifications",
+    help="Receive real-time order status updates",
+)
+notify_listings_change = fields.Boolean(
+    string="Listings Change Notifications",
+    help="Receive updates when listings are modified",
+)
+notify_inventory_change = fields.Boolean(
+    string="Inventory Change Notifications",
+    help="Receive FBA inventory level changes",
+)
+```
+
+#### 3. Notifications Adapter (`components/backend_adapter.py`)
+```python
+class AmazonNotificationsAdapter(AmazonBaseAdapter):
+    _name = "amazon.notifications.adapter"
+    _usage = "notifications.adapter"
+
+    def get_subscription(self, notification_type):
+        """GET /notifications/v1/subscriptions/{notificationType}"""
+
+    def create_subscription(self, notification_type, destination_id):
+        """POST /notifications/v1/subscriptions"""
+
+    def delete_subscription(self, subscription_id):
+        """DELETE /notifications/v1/subscriptions/{subscriptionId}"""
+
+    def get_destinations(self):
+        """GET /notifications/v1/destinations"""
+
+    def create_destination(self, name, sqs_arn):
+        """POST /notifications/v1/destinations"""
+
+    def delete_destination(self, destination_id):
+        """DELETE /notifications/v1/destinations/{destinationId}"""
+```
+
+#### 4. SNS Message Handler
+```python
+def _handle_sns_message(self, message):
+    """Process incoming SNS message"""
+    message_type = message.get('Type')
+
+    if message_type == 'SubscriptionConfirmation':
+        # Auto-confirm subscription by visiting SubscribeURL
+        requests.get(message['SubscribeURL'])
+        return
+
+    if message_type == 'Notification':
+        payload = json.loads(message['Message'])
+        notification_type = payload.get('notificationType')
+
+        handlers = {
+            'ORDER_CHANGE': self._handle_order_change,
+            'LISTINGS_ITEM_STATUS_CHANGE': self._handle_listing_change,
+            'FBA_INVENTORY_AVAILABILITY_CHANGES': self._handle_inventory_change,
+        }
+
+        handler = handlers.get(notification_type)
+        if handler:
+            handler(payload)
+```
+
+### Available Notification Types
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `ORDER_CHANGE` | Order created, updated, or cancelled | Real-time order sync |
+| `LISTINGS_ITEM_STATUS_CHANGE` | Listing status changes | Sync new listings |
+| `LISTINGS_ITEM_MFN_QUANTITY_CHANGE` | MFN quantity changes | Stock reconciliation |
+| `FBA_INVENTORY_AVAILABILITY_CHANGES` | FBA inventory changes | FBA stock sync |
+| `FEED_PROCESSING_FINISHED` | Feed completed | Feed status tracking |
+| `REPORT_PROCESSING_FINISHED` | Report ready | Auto-download reports |
+
+### Security Considerations
+
+1. **Webhook Token**: Random token in URL prevents unauthorized access
+2. **SNS Signature Verification**: Verify `x-amz-sns-signature` header
+3. **IP Whitelisting**: Optional - restrict to Amazon IP ranges
+4. **HTTPS Only**: Webhook must be served over TLS
+5. **Rate Limiting**: Implement request throttling
+6. **Idempotency**: Handle duplicate notifications gracefully
+
+### Implementation Steps
+
+1. **Phase 1: Webhook Infrastructure**
+   - Add webhook controller with token auth
+   - Add SNS signature verification
+   - Add backend configuration fields
+   - Test with SNS subscription confirmation
+
+2. **Phase 2: Notifications Adapter**
+   - Implement Notifications API adapter
+   - Add destination creation (SQS or EventBridge)
+   - Add subscription management
+
+3. **Phase 3: Event Handlers**
+   - ORDER_CHANGE → trigger order sync
+   - LISTINGS_ITEM_STATUS_CHANGE → create bindings
+   - Implement queue job for each handler
+
+4. **Phase 4: UI & Management**
+   - Backend form for subscription management
+   - Notification log/history view
+   - Health monitoring dashboard
+
+### AWS Requirements
+
+- **SQS Queue** or **EventBridge**: Amazon requires a destination
+- **IAM Policy**: SP-API needs permission to publish to your destination
+- **Public Endpoint**: Odoo must be accessible from internet (for HTTP destination)
+
+### Alternative: SQS Polling (Simpler)
+
+If webhook is complex, use SQS polling instead:
+```
+Amazon SP-API → SQS Queue → Odoo Cron polls SQS → Process
+```
+
+This avoids webhook complexity but adds ~1-5 min latency.
 
 ---
 
