@@ -827,9 +827,7 @@ class TestAmazonShop(common.CommonConnectorAmazonSpapi):
                 "sale_id": sale_order.id,
                 "state": "done",
                 "date_done": datetime.now(),
-                "carrier_id": self.env["delivery.carrier"]
-                .create({"name": "Test Carrier", "product_id": self.product.id})
-                .id,
+                "carrier_id": self._create_test_carrier().id,
                 "carrier_tracking_ref": "TRACK123",
             }
         )

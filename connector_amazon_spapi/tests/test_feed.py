@@ -55,7 +55,7 @@ class TestFeedLifecycle(CommonConnectorAmazonSpapi):
         self.assertEqual(first_call[1]["method"], "POST")
         self.assertEqual(first_call[1]["endpoint"], "/feeds/2021-06-30/documents")
         self.assertEqual(
-            first_call[1]["payload"]["contentType"],
+            first_call[1]["json_data"]["contentType"],
             "text/xml; charset=UTF-8",
         )
 
@@ -70,11 +70,11 @@ class TestFeedLifecycle(CommonConnectorAmazonSpapi):
         self.assertEqual(second_call[1]["method"], "POST")
         self.assertEqual(second_call[1]["endpoint"], "/feeds/2021-06-30/feeds")
         self.assertEqual(
-            second_call[1]["payload"]["feedType"],
+            second_call[1]["json_data"]["feedType"],
             "POST_INVENTORY_AVAILABILITY_DATA",
         )
         self.assertEqual(
-            second_call[1]["payload"]["inputFeedDocumentId"],
+            second_call[1]["json_data"]["inputFeedDocumentId"],
             "TEST_DOC_123",
         )
 
@@ -171,7 +171,6 @@ class TestFeedLifecycle(CommonConnectorAmazonSpapi):
         mock_call_api.assert_called_once_with(
             method="GET",
             endpoint="/feeds/2021-06-30/feeds/TEST_FEED_456",
-            marketplace_id=self.marketplace.marketplace_id,
         )
 
     @mock.patch(
@@ -343,7 +342,7 @@ class TestFeedLifecycle(CommonConnectorAmazonSpapi):
             # Verify feed type was passed correctly
             create_feed_call = mock_call_api.call_args_list[1]
             self.assertEqual(
-                create_feed_call[1]["payload"]["feedType"],
+                create_feed_call[1]["json_data"]["feedType"],
                 feed_type,
             )
 

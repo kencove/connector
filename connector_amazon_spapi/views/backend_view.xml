@@ -51,7 +51,6 @@
                     </group>
                     <group string="Credentials">
                         <field name="seller_id" />
-                        <field name="seller_sku" />
                         <field name="lwa_client_id" password="True" />
                         <field name="lwa_client_secret" password="True" />
                         <field name="lwa_refresh_token" password="True" />
@@ -66,8 +65,16 @@
                     <group string="Webhook Configuration">
                         <group>
                             <field name="webhook_active" widget="boolean_toggle" />
-                            <field name="webhook_url" widget="CopyClipboardChar" attrs="{'invisible': [('webhook_active', '=', False)]}" />
-                            <field name="webhook_token" password="True" attrs="{'invisible': [('webhook_active', '=', False)]}" />
+                            <field
+                                name="webhook_url"
+                                widget="CopyClipboardChar"
+                                attrs="{'invisible': [('webhook_active', '=', False)]}"
+                            />
+                            <field
+                                name="webhook_token"
+                                password="True"
+                                attrs="{'invisible': [('webhook_active', '=', False)]}"
+                            />
                         </group>
                         <group attrs="{'invisible': [('webhook_active', '=', False)]}">
                             <field name="notify_order_change" />

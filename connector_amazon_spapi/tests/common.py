@@ -191,6 +191,47 @@ class CommonConnectorAmazonSpapi(TransactionComponentCase):
         defaults.update(kwargs)
         return self.env["amazon.product.binding"].create(defaults)
 
+    def _create_test_carrier(self, **kwargs):
+        """Create a test delivery carrier, handling environment-specific fields"""
+        carrier_model = self.env["delivery.carrier"]
+
+        # First try to find an existing carrier to reuse
+        existing = carrier_model.search([], limit=1)
+        if existing:
+            return existing
+
+        # Check if stamps_service_type field exists in the model
+        has_stamps_field = "stamps_service_type" in carrier_model._fields
+
+        vals = {
+            "name": "Test Carrier",
+            "product_id": self.product.id,
+        }
+        vals.update(kwargs)
+
+        if has_stamps_field:
+            vals["stamps_service_type"] = "US-FC"
+            return carrier_model.create(vals)
+
+        # If stamps field not in model but DB might have constraint,
+        # use SQL to handle the insert with default value
+        try:
+            return carrier_model.create(vals)
+        except Exception:
+            # Database has stamps_service_type NOT NULL but model doesn't have field
+            # Use raw SQL to insert with a default value
+            self.env.cr.execute(
+                """
+                INSERT INTO delivery_carrier
+                (name, product_id, delivery_type, stamps_service_type, create_uid, write_uid, create_date, write_date)
+                VALUES (%s, %s, 'fixed', 'US-FC', %s, %s, NOW(), NOW())
+                RETURNING id
+            """,
+                ("Test Carrier", self.product.id, self.env.uid, self.env.uid),
+            )
+            carrier_id = self.env.cr.fetchone()[0]
+            return carrier_model.browse(carrier_id)
+
     def _create_sample_pricing_data(self, asin=None):
         """Create sample competitive pricing data from Amazon API"""
         return {

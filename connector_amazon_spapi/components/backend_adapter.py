@@ -107,7 +107,7 @@ class AmazonPricingAdapter(AmazonBaseAdapter):
             params["Skus"] = ",".join(skus)
 
         return self._call_api(
-            "GET", "/products/pricing/v0/competitivePrice", params=params
+            "GET", "/products/pricing/2022-05-01/competitivePrice", params=params
         )
 
     def get_competitive_pricing_bulk(
@@ -183,7 +183,9 @@ class AmazonPricingAdapter(AmazonBaseAdapter):
         if skus:
             params["Skus"] = ",".join(skus[:20])
 
-        return self._call_api("GET", "/products/pricing/v0/price", params=params)
+        return self._call_api(
+            "GET", "/products/pricing/2022-05-01/price", params=params
+        )
 
     def create_price_feed(self, feed_content):
         """Submit price feed through Feeds API
@@ -530,7 +532,9 @@ class AmazonNotificationsAdapter(AmazonBaseAdapter):
         endpoint = f"/notifications/v1/subscriptions/{notification_type}"
         return self._call_api("GET", endpoint)
 
-    def create_subscription(self, notification_type, destination_id, payload_version=None):
+    def create_subscription(
+        self, notification_type, destination_id, payload_version=None
+    ):
         """Create a subscription to a notification type.
 
         Args:
@@ -562,7 +566,9 @@ class AmazonNotificationsAdapter(AmazonBaseAdapter):
         Returns:
             dict: Empty response on success
         """
-        endpoint = f"/notifications/v1/subscriptions/{notification_type}/{subscription_id}"
+        endpoint = (
+            f"/notifications/v1/subscriptions/{notification_type}/{subscription_id}"
+        )
         return self._call_api("DELETE", endpoint)
 
     def get_destinations(self):
@@ -605,9 +611,7 @@ class AmazonNotificationsAdapter(AmazonBaseAdapter):
         if resource_type == "SQS":
             payload = {
                 "name": name,
-                "resourceSpecification": {
-                    "sqs": {"arn": arn}
-                },
+                "resourceSpecification": {"sqs": {"arn": arn}},
             }
         elif resource_type == "EVENT_BRIDGE":
             payload = {
@@ -641,7 +645,7 @@ class AmazonListingsAdapter(AmazonBaseAdapter):
     _name = "amazon.listings.adapter"
     _usage = "listings.adapter"
 
-    def get_listings_item(self, marketplace_ids, included_data=None):
+    def get_listings_item(self, seller_sku, marketplace_ids, included_data=None):
         """Get seller's listing for a SKU
 
         Args:
@@ -659,7 +663,7 @@ class AmazonListingsAdapter(AmazonBaseAdapter):
 
         endpoint = (
             "/listings/2021-08-01/items/"
-            f"{self.backend_record.seller_id}/{self.backend_record.seller_sku}"
+            f"{self.backend_record.seller_id}/{seller_sku}"
         )
         return self._call_api("GET", endpoint, params=params)
 

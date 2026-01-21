@@ -134,7 +134,7 @@ class TestAmazonOrder(common.CommonConnectorAmazonSpapi):
         line_obj = self.env["amazon.sale.order.line"]
         line = line_obj._create_or_update_from_amazon(order, self.shop, sample_item)
 
-        self.assertEqual(line.order_id, order)
+        self.assertEqual(line.amazon_order_id, order)
         self.assertEqual(line.external_id, sample_item["OrderItemId"])
         self.assertEqual(line.product_title, sample_item["Title"])
         self.assertEqual(line.quantity, sample_item["QuantityOrdered"])
@@ -179,7 +179,7 @@ class TestAmazonOrder(common.CommonConnectorAmazonSpapi):
         line = line_obj._create_or_update_from_amazon(order, self.shop, sample_item)
 
         # Should create line without product
-        self.assertEqual(line.order_id, order)
+        self.assertEqual(line.amazon_order_id, order)
         self.assertFalse(line.product_id)
         self.assertEqual(line.external_id, sample_item["OrderItemId"])
 
@@ -230,7 +230,9 @@ class TestAmazonOrder(common.CommonConnectorAmazonSpapi):
         order._sync_order_lines()
 
         self.assertEqual(mock_call_sp_api.call_count, 2)
-        lines = self.env["amazon.sale.order.line"].search([("order_id", "=", order.id)])
+        lines = self.env["amazon.sale.order.line"].search(
+            [("amazon_order_id", "=", order.id)]
+        )
         self.assertEqual(len(lines), 2)
 
     def test_order_line_creation_with_all_fields(self):
@@ -272,7 +274,9 @@ class TestAmazonOrder(common.CommonConnectorAmazonSpapi):
 
         order._sync_order_lines()
 
-        lines = self.env["amazon.sale.order.line"].search([("order_id", "=", order.id)])
+        lines = self.env["amazon.sale.order.line"].search(
+            [("amazon_order_id", "=", order.id)]
+        )
         self.assertEqual(len(lines), 0)
 
     def test_order_fields_match_amazon_order_data(self):

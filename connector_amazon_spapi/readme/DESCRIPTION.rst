@@ -274,7 +274,7 @@ amazon.sale.order.line
 
 Order line item binding.
 
-- **order_id**: Parent order binding
+- **amazon_order_id**: Parent order binding
 - **product_id**: Linked Odoo product (if matched)
 - **external_id**: Amazon OrderItemId
 - **asin**: Amazon ASIN

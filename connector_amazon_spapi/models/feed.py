@@ -135,8 +135,7 @@ class AmazonFeed(models.Model):
         return self.backend_id._call_sp_api(
             method="POST",
             endpoint=endpoint,
-            marketplace_id=self.marketplace_id.marketplace_id,
-            payload=payload,
+            json_data=payload,
         )
 
     def _upload_feed_content(self, upload_url):
@@ -174,8 +173,7 @@ class AmazonFeed(models.Model):
         return self.backend_id._call_sp_api(
             method="POST",
             endpoint=endpoint,
-            marketplace_id=self.marketplace_id.marketplace_id,
-            payload=payload,
+            json_data=payload,
         )
 
     def check_feed_status(self):
@@ -193,7 +191,6 @@ class AmazonFeed(models.Model):
             response = self.backend_id._call_sp_api(
                 method="GET",
                 endpoint=endpoint,
-                marketplace_id=self.marketplace_id.marketplace_id,
             )
 
             processing_status = response.get("processingStatus")

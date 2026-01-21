@@ -287,9 +287,7 @@ class AmazonShop(models.Model):
             dict: Summary with created/updated/skipped counts
         """
         self.ensure_one()
-        import csv
         import gzip
-        import io
         import time
 
         import requests
@@ -425,7 +423,7 @@ class AmazonShop(models.Model):
         for row in reader:
             sku = row.get("seller-sku")
             asin = row.get("asin1")
-            status = row.get("status", "").lower()
+            row.get("status", "").lower()
 
             # Skip if no SKU or inactive
             if not sku:
@@ -446,7 +444,10 @@ class AmazonShop(models.Model):
                 vals = {}
                 if asin and asin != existing.asin:
                     vals["asin"] = asin
-                if self.marketplace_id and existing.marketplace_id != self.marketplace_id:
+                if (
+                    self.marketplace_id
+                    and existing.marketplace_id != self.marketplace_id
+                ):
                     vals["marketplace_id"] = self.marketplace_id.id
 
                 if vals:
@@ -486,110 +487,81 @@ class AmazonShop(models.Model):
         return {"created": created, "updated": updated, "skipped": skipped}
 
     def sync_catalog(self):
-        """Sync product listings from Amazon Catalog Items API
+        """Sync product listings from Amazon Listings Items API
 
-        Fetches active listings and creates amazon.product.binding records
-        for products that exist on Amazon Seller Central.
+        Refreshes existing amazon.product.binding records by fetching
+        current listing data from Amazon Seller Central.
+
+        Note: The Listings Items API requires a specific SKU per request,
+        so this method iterates over existing bindings rather than
+        discovering new listings.
 
         Ref: https://developer-docs.amazon.com/sp-api/docs/
-        catalog-items-api-v2020-12-01-reference
+        listings-items-api-v2021-08-01-reference
         """
         self.ensure_one()
         try:
-            # Call Catalog Items API to get active listings
-            # Note: This uses the ListingsItems endpoint for seller's active inventory
+            binding_model = self.env["amazon.product.binding"]
+            updated_count = 0
 
-            # Use adapter for API calls via work_on context
+            # Get existing bindings for this backend/marketplace
+            bindings = binding_model.search(
+                [
+                    ("backend_id", "=", self.backend_id.id),
+                    ("marketplace_id", "=", self.marketplace_id.id),
+                    ("seller_sku", "!=", False),
+                ]
+            )
+
             with self.backend_id.work_on("amazon.product.binding") as work:
                 adapter = work.component(usage="listings.adapter")
-                # Fetch all listings for the seller and marketplace
-                result = adapter.get_listings_item(
-                    marketplace_ids=[self.marketplace_id.marketplace_id],
-                )
 
-            if isinstance(result, dict):
-                listings = [result]
-            elif isinstance(result, list):
-                listings = result
-            else:
-                listings = []
+                for binding in bindings:
+                    try:
+                        # Fetch listing for this specific SKU
+                        result = adapter.get_listings_item(
+                            seller_sku=binding.seller_sku,
+                            marketplace_ids=[self.marketplace_id.marketplace_id],
+                            included_data=["summaries"],
+                        )
 
-            binding_model = self.env["amazon.product.binding"]
-            created_count = 0
-            updated_count = 0
-            for listing in listings:
-                sku = listing.get("sku", None)
-                asin = None
-                if (
-                    listing.get("summaries")
-                    and listing.get("summaries")[0]
-                    and listing.get("summaries")[0].get("asin")
-                ):
-                    asin = listing["summaries"][0]["asin"]
+                        if not result:
+                            continue
 
-                if not sku or not asin:
-                    continue
+                        # Extract ASIN from summaries
+                        asin = None
+                        if (
+                            result.get("summaries")
+                            and result.get("summaries")[0]
+                            and result.get("summaries")[0].get("asin")
+                        ):
+                            asin = result["summaries"][0]["asin"]
 
-                # Check if binding already exists
-                binding = binding_model.search(
-                    [
-                        ("backend_id", "=", self.backend_id.id),
-                        ("seller_sku", "=", sku),
-                    ],
-                    limit=1,
-                )
+                        if asin and asin != binding.asin:
+                            binding.write({"asin": asin})
+                            updated_count += 1
 
-                if binding:
-                    # Update existing binding
-                    binding.write(
-                        {
-                            "asin": asin or binding.asin,
-                            "marketplace_id": self.marketplace_id.id,
-                        }
-                    )
-                    updated_count += 1
-                else:
-                    # Try to match by SKU in Odoo default_code
-                    product = self.env["product.product"].search(
-                        [("default_code", "=", sku)], limit=1
-                    )
-
-                    if not product:
-                        # Log unmapped product - manual intervention needed
+                    except Exception as e:
                         _logger.warning(
-                            (
-                                "Amazon listing SKU %s missing in Odoo. "
-                                "Create product (default_code=%s) or create binding."
-                            ),
-                            sku,
-                            sku,
+                            "Failed to sync listing for SKU %s: %s",
+                            binding.seller_sku,
+                            str(e),
                         )
                         continue
 
-                    # Create new binding
-                    binding_model.create(
-                        {
-                            "backend_id": self.backend_id.id,
-                            "marketplace_id": self.marketplace_id.id,
-                            "odoo_id": product.id,
-                            "seller_sku": sku,
-                            "asin": asin,
-                            "sync_stock": True,
-                            "sync_price": True,
-                        }
-                    )
-                    created_count += 1
-
-            _logger.info(
-                "Catalog sync for shop %s: %d created, %d updated",
-                self.name,
-                created_count,
-                updated_count,
-            )
-            return {"created": created_count, "updated": updated_count}
+            return {
+                "type": "ir.actions.client",
+                "tag": "display_notification",
+                "params": {
+                    "title": _("Catalog Sync Complete"),
+                    "message": _("Updated %d product binding(s)") % updated_count,
+                    "type": "success",
+                },
+            }
 
         except Exception as e:
-            raise UserError(f"Failed to sync catalog for {self.name}: {str(e)}") from e
+            _logger.exception("Error during catalog sync: %s", str(e))
+            raise UserError(_("Error syncing catalog: %s") % str(e)) from e
 
     def action_push_stock(self):
         """Trigger stock push in background"""
@@ -738,9 +710,7 @@ class AmazonShop(models.Model):
             try:
                 shop.with_delay().sync_catalog_bulk()
             except Exception:
-                _logger.exception(
-                    "Failed to queue catalog sync for shop %s", shop.name
-                )
+                _logger.exception("Failed to queue catalog sync for shop %s", shop.name)
                 continue
 
         # Weekly catalog sync (only on Mondays)

@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from xml.etree import ElementTree as ET
 
 from odoo import api, fields, models
 from odoo.tools import config
@@ -54,6 +55,7 @@ class AmazonSaleOrder(models.Model):
         """Build XML feed for order fulfillment notification.
 
         Returns XML string following Amazon's Order Fulfillment Feed schema.
+        Uses ElementTree for safe XML generation to prevent injection attacks.
         Ref: https://sellercentral.amazon.com/gp/help/200387280
         """
         merchant_id = self.backend_id.seller_id
@@ -63,35 +65,37 @@ class AmazonSaleOrder(models.Model):
             else datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         )
 
-        xml_lines = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
-            '    xsi:noNamespaceSchemaLocation="amzn-envelope.xsd">',
-            "  <Header>",
-            "    <DocumentVersion>1.01</DocumentVersion>",
-            "    <MerchantIdentifier>" + merchant_id + "</MerchantIdentifier>",
-            "  </Header>",
-            "  <MessageType>OrderFulfillment</MessageType>",
-            "  <Message>",
-            "    <MessageID>1</MessageID>",
-            "    <OrderFulfillment>",
-            f"      <AmazonOrderID>{self.external_id}</AmazonOrderID>",
-            f"      <FulfillmentDate>{ship_date}</FulfillmentDate>",
-        ]
+        # Build XML using ElementTree for safe content escaping
+        root = ET.Element(
+            "AmazonEnvelope",
+            {
+                "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+                "xsi:noNamespaceSchemaLocation": "amzn-envelope.xsd",
+            },
+        )
+
+        header = ET.SubElement(root, "Header")
+        ET.SubElement(header, "DocumentVersion").text = "1.01"
+        ET.SubElement(header, "MerchantIdentifier").text = merchant_id
+
+        ET.SubElement(root, "MessageType").text = "OrderFulfillment"
+
+        message = ET.SubElement(root, "Message")
+        ET.SubElement(message, "MessageID").text = "1"
+
+        fulfillment = ET.SubElement(message, "OrderFulfillment")
+        ET.SubElement(fulfillment, "AmazonOrderID").text = self.external_id
+        ET.SubElement(fulfillment, "FulfillmentDate").text = ship_date
 
         # Add carrier and tracking if available
         if carrier_name:
-            xml_lines.append("      <FulfillmentData>")
-            xml_lines.append(f"        <CarrierName>{carrier_name}</CarrierName>")
+            fulfillment_data = ET.SubElement(fulfillment, "FulfillmentData")
+            ET.SubElement(fulfillment_data, "CarrierName").text = carrier_name
             if tracking_ref:
-                xml_lines.append(
-                    f"        <ShippingMethod>{tracking_ref}</ShippingMethod>"
-                )
-                xml_lines.append(
-                    f"        <ShipperTrackingNumber>{tracking_ref}"
-                    "</ShipperTrackingNumber>"
-                )
-            xml_lines.append("      </FulfillmentData>")
+                ET.SubElement(fulfillment_data, "ShippingMethod").text = tracking_ref
+                ET.SubElement(
+                    fulfillment_data, "ShipperTrackingNumber"
+                ).text = tracking_ref
 
         # Add line items (shipped quantities)
         for move in picking.move_ids.filtered(lambda m: m.state == "done"):
@@ -110,25 +114,15 @@ class AmazonSaleOrder(models.Model):
                     limit=1,
                 )
                 if amazon_line and amazon_line.external_id:
-                    xml_lines.extend(
-                        [
-                            "      <Item>",
-                            f"        <AmazonOrderItemCode>"
-                            f"{amazon_line.external_id}</AmazonOrderItemCode>",
-                            f"        <Quantity>{int(move.quantity)}</Quantity>",
-                            "      </Item>",
-                        ]
-                    )
+                    item = ET.SubElement(fulfillment, "Item")
+                    ET.SubElement(
+                        item, "AmazonOrderItemCode"
+                    ).text = amazon_line.external_id
+                    ET.SubElement(item, "Quantity").text = str(int(move.quantity))
 
-        xml_lines.extend(
-            [
-                "    </OrderFulfillment>",
-                "  </Message>",
-                "</AmazonEnvelope>",
-            ]
+        return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(
+            root, encoding="unicode"
         )
-
-        return "\n".join(xml_lines)
 
     @api.model
     def _create_or_update_from_amazon(self, shop, amazon_order):  # noqa: C901
@@ -354,6 +348,7 @@ class AmazonSaleOrder(models.Model):
     def _build_shipment_feed_xml(self, picking):
         """Build XML for Order Fulfillment feed for a single order.
 
+        Uses ElementTree for safe XML generation to prevent injection attacks.
         Ref: https://sellercentral.amazon.com/gp/help/200202590
         """
         self.ensure_one()
@@ -371,7 +366,41 @@ class AmazonSaleOrder(models.Model):
             or "Standard"
         )
 
-        lines_xml = []
+        merchant_id = self.backend_id.lwa_client_id
+        fulfillment_date = (
+            fields.Datetime.to_string(picking.date_done)
+            if picking.date_done
+            else fields.Datetime.now()
+        )
+
+        # Build XML using ElementTree for safe content escaping
+        root = ET.Element(
+            "AmazonEnvelope",
+            {
+                "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+                "xsi:noNamespaceSchemaLocation": "amzn-envelope.xsd",
+            },
+        )
+
+        header = ET.SubElement(root, "Header")
+        ET.SubElement(header, "DocumentVersion").text = "1.01"
+        ET.SubElement(header, "MerchantIdentifier").text = merchant_id
+
+        ET.SubElement(root, "MessageType").text = "OrderFulfillment"
+
+        message = ET.SubElement(root, "Message")
+        ET.SubElement(message, "MessageID").text = "1"
+
+        fulfillment = ET.SubElement(message, "OrderFulfillment")
+        ET.SubElement(fulfillment, "AmazonOrderID").text = self.external_id
+        ET.SubElement(fulfillment, "FulfillmentDate").text = str(fulfillment_date)
+
+        fulfillment_data = ET.SubElement(fulfillment, "FulfillmentData")
+        ET.SubElement(fulfillment_data, "CarrierName").text = carrier_name
+        ET.SubElement(fulfillment_data, "ShippingMethod").text = ship_method
+        ET.SubElement(fulfillment_data, "ShipperTrackingNumber").text = tracking
+
+        # Add line items
         for line in self.odoo_id.order_line:
             # Try to find Amazon line binding to get AmazonOrderItemCode
             line_binding = self.env["amazon.sale.order.line"].search(
@@ -383,52 +412,14 @@ class AmazonSaleOrder(models.Model):
             )
             amazon_item_code = line_binding.external_id or ""
             qty = int(line.product_uom_qty)
-            lines_xml.extend(
-                [
-                    "      <Item>",
-                    (
-                        "        <AmazonOrderItemCode>"
-                        + amazon_item_code
-                        + "</AmazonOrderItemCode>"
-                    ),
-                    f"        <Quantity>{qty}</Quantity>",
-                    "      </Item>",
-                ]
-            )
 
-        merchant_id = self.backend_id.lwa_client_id
-        xml_lines = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
-            '    xsi:noNamespaceSchemaLocation="amzn-envelope.xsd">',
-            "  <Header>",
-            "    <DocumentVersion>1.01</DocumentVersion>",
-            "    <MerchantIdentifier>" + merchant_id + "</MerchantIdentifier>",
-            "  </Header>",
-            "  <MessageType>OrderFulfillment</MessageType>",
-            "  <Message>",
-            "    <MessageID>1</MessageID>",
-            "    <OrderFulfillment>",
-            f"      <AmazonOrderID>{self.external_id}</AmazonOrderID>",
-            "      <FulfillmentDate>"
-            + (
-                fields.Datetime.to_string(picking.date_done)
-                if picking.date_done
-                else fields.Datetime.now()
-            )
-            + "</FulfillmentDate>",
-            "      <FulfillmentData>",
-            f"        <CarrierName>{carrier_name}</CarrierName>",
-            f"        <ShippingMethod>{ship_method}</ShippingMethod>",
-            f"        <ShipperTrackingNumber>{tracking}</ShipperTrackingNumber>",
-            "      </FulfillmentData>",
-            *lines_xml,
-            "    </OrderFulfillment>",
-            "  </Message>",
-            "</AmazonEnvelope>",
-        ]
+            item = ET.SubElement(fulfillment, "Item")
+            ET.SubElement(item, "AmazonOrderItemCode").text = amazon_item_code
+            ET.SubElement(item, "Quantity").text = str(qty)
 
-        return "\n".join(xml_lines)
+        return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(
+            root, encoding="unicode"
+        )
 
     def push_shipment(self):
         """Create and submit a fulfillment feed for this order's latest shipment."""
@@ -651,15 +642,9 @@ class AmazonSaleOrderLine(models.Model):
     )
     amazon_order_id = fields.Many2one(
         comodel_name="amazon.sale.order",
+        string="Order",
         required=True,
         ondelete="cascade",
-    )
-    order_id = fields.Many2one(
-        comodel_name="amazon.sale.order",
-        string="Order",
-        compute="_compute_order_id",
-        store=True,
-        readonly=True,
     )
     sale_order_id = fields.Many2one(
         comodel_name="sale.order",
@@ -693,8 +678,8 @@ class AmazonSaleOrderLine(models.Model):
             limit=1,
         )
 
-        # Find product by SKU
-        product = self._get_product_by_sku(shop, seller_sku)
+        # Find product by SKU (returns tuple: binding, product)
+        product_binding, product = self._get_product_by_sku(shop, seller_sku)
 
         # Prepare line values
         quantity = float(amazon_item.get("QuantityOrdered", 0))
@@ -733,13 +718,13 @@ class AmazonSaleOrderLine(models.Model):
         binding_vals = {
             "backend_id": shop.backend_id.id,
             "amazon_order_id": amazon_order_binding.id,
-            "order_id": amazon_order_binding.id,
             "external_id": item_id,
             "seller_sku": seller_sku,
             "asin": amazon_item.get("ASIN"),
             "product_title": amazon_item.get("Title"),
             "quantity": quantity,
             "quantity_shipped": quantity_shipped,
+            "product_binding_id": product_binding.id if product_binding else False,
         }
 
         if binding:
@@ -753,15 +738,27 @@ class AmazonSaleOrderLine(models.Model):
 
         return binding
 
-    @api.depends("amazon_order_id")
-    def _compute_order_id(self):
-        for line in self:
-            line.order_id = line.amazon_order_id
-
     def _get_product_by_sku(self, shop, seller_sku):
-        """Find product by Amazon SKU"""
-        # TODO: Implement product matching logic via amazon.product.binding
-        # For now, search by default_code (internal reference)
-        return self.env["product.product"].search(
+        """Find product by Amazon SKU.
+
+        Searches amazon.product.binding first, then falls back to
+        product.product by default_code.
+
+        Returns:
+            tuple: (amazon.product.binding or empty recordset, product.product or empty recordset)
+        """
+        # Search binding first
+        binding = self.env["amazon.product.binding"].search(
+            [
+                ("backend_id", "=", shop.backend_id.id),
+                ("seller_sku", "=", seller_sku),
+            ],
+            limit=1,
+        )
+        if binding:
+            return binding, binding.odoo_id
+        # Fallback to direct product search
+        product = self.env["product.product"].search(
             [("default_code", "=", seller_sku)], limit=1
         )
+        return self.env["amazon.product.binding"], product
