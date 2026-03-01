@@ -8,10 +8,11 @@
     forbidden and will likely break the structure of the README.rst
     or other documents where this fragment is included. ]
 
-Next
-~~~~
+16.0.1.0.0 (2026-02-28)
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-12.0.1.0.0 (2018-11-26)
-~~~~~~~~~~~~~~~~~~~~~~~
-
-* [MIGRATION] from 12.0 branched at rev. 324e006
+* Initial release of Amazon SP-API connector for Odoo 16.0.
+* Order import, inventory push, competitive pricing, bulk catalog sync.
+* Webhook endpoint for Amazon SNS notifications.
+* Coexistence support with Odoo Enterprise ``sale_amazon`` module.
+* Generic listing enrichment provider integration.

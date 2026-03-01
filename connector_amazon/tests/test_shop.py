@@ -10,13 +10,6 @@ from . import common
 class TestAmazonShop(common.CommonConnectorAmazonSpapi):
     """Tests for amz.shop model"""
 
-    def _set_qty_in_stock_location(self, product, quantity):
-        location = self.env.ref("stock.stock_location_stock")
-        quants = self.env["stock.quant"]._gather(product, location, strict=True)
-        # _update_available_quantity adds to current quantity; adjust to target
-        quantity -= sum(quants.mapped("quantity"))
-        self.env["stock.quant"]._update_available_quantity(product, location, quantity)
-
     def test_shop_creation(self):
         """Test creating a shop record"""
         self.assertEqual(self.shop.name, "Test Amazon Shop")

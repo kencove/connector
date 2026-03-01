@@ -234,6 +234,87 @@ class CommonConnectorAmazonSpapi(TransactionComponentCase):
             carrier_id = self.env.cr.fetchone()[0]
             return carrier_model.browse(carrier_id)
 
+    def _set_qty_in_stock_location(self, product, quantity):
+        """Set available stock quantity for a product in the default stock location."""
+        location = self.env.ref("stock.stock_location_stock")
+        quants = self.env["stock.quant"]._gather(product, location, strict=True)
+        quantity -= sum(quants.mapped("quantity"))
+        self.env["stock.quant"]._update_available_quantity(product, location, quantity)
+
+    def _create_done_picking(self, sale_order, carrier=None, tracking_ref=None):
+        """Create a done stock.picking linked to a sale order.
+
+        Args:
+            sale_order: sale.order record
+            carrier: Optional delivery.carrier record
+            tracking_ref: Optional tracking reference string
+
+        Returns:
+            stock.picking record in 'done' state
+        """
+        warehouse = self.shop.warehouse_id or self.env["stock.warehouse"].search(
+            [("company_id", "=", self.env.company.id)], limit=1
+        )
+        picking_type = (
+            warehouse.out_type_id
+            if warehouse
+            else self.env.ref("stock.picking_type_out")
+        )
+        vals = {
+            "picking_type_id": picking_type.id,
+            "location_id": picking_type.default_location_src_id.id
+            or self.env.ref("stock.stock_location_stock").id,
+            "location_dest_id": picking_type.default_location_dest_id.id
+            or self.env.ref("stock.stock_location_customers").id,
+            "origin": sale_order.name,
+            "state": "done",
+        }
+        if carrier:
+            vals["carrier_id"] = carrier.id
+        if tracking_ref:
+            vals["carrier_tracking_ref"] = tracking_ref
+        return self.env["stock.picking"].create(vals)
+
+    def _create_sample_listings_tsv(self, rows=None):
+        """Create sample TSV content matching GET_MERCHANT_LISTINGS_ALL_DATA report.
+
+        Args:
+            rows: Optional list of dicts to override default row data.
+                  Each dict can have: seller-sku, asin1, item-name, price,
+                  quantity, fulfillment-channel, status.
+
+        Returns:
+            str: TSV content with header and data rows
+        """
+        headers = [
+            "seller-sku",
+            "asin1",
+            "item-name",
+            "price",
+            "quantity",
+            "fulfillment-channel",
+            "status",
+        ]
+        default_rows = [
+            {
+                "seller-sku": "TEST-SKU-001",
+                "asin1": "B08TEST123",
+                "item-name": "Test Product",
+                "price": "99.99",
+                "quantity": "10",
+                "fulfillment-channel": "DEFAULT",
+                "status": "Active",
+            },
+        ]
+
+        data_rows = rows or default_rows
+        lines = ["\t".join(headers)]
+        for row in data_rows:
+            line = "\t".join(row.get(h, "") for h in headers)
+            lines.append(line)
+
+        return "\n".join(lines)
+
     def _create_sample_pricing_data(self, asin=None):
         """Create sample competitive pricing data from Amazon API"""
         return {

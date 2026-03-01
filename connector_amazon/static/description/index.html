@@ -381,24 +381,28 @@ multiple Amazon marketplaces.</p>
 <ul class="simple">
 <li><a class="reference internal" href="#usage" id="toc-entry-1">Usage</a></li>
 <li><a class="reference internal" href="#changelog" id="toc-entry-2">Changelog</a><ul>
-<li><a class="reference internal" href="#next" id="toc-entry-3">Next</a></li>
-<li><a class="reference internal" href="#section-1" id="toc-entry-4">12.0.1.0.0 (2018-11-26)</a></li>
+<li><a class="reference internal" href="#section-1" id="toc-entry-3">16.0.1.0.0 (2026-02-28)</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#bug-tracker" id="toc-entry-5">Bug Tracker</a></li>
-<li><a class="reference internal" href="#credits" id="toc-entry-6">Credits</a><ul>
-<li><a class="reference internal" href="#authors" id="toc-entry-7">Authors</a></li>
-<li><a class="reference internal" href="#contributors" id="toc-entry-8">Contributors</a></li>
-<li><a class="reference internal" href="#maintainers" id="toc-entry-9">Maintainers</a></li>
+<li><a class="reference internal" href="#bug-tracker" id="toc-entry-4">Bug Tracker</a></li>
+<li><a class="reference internal" href="#credits" id="toc-entry-5">Credits</a><ul>
+<li><a class="reference internal" href="#authors" id="toc-entry-6">Authors</a></li>
+<li><a class="reference internal" href="#contributors" id="toc-entry-7">Contributors</a></li>
+<li><a class="reference internal" href="#maintainers" id="toc-entry-8">Maintainers</a></li>
 </ul>
 </li>
 </ul>
 </div>
 <div class="section" id="usage">
 <h1><a class="toc-backref" href="#toc-entry-1">Usage</a></h1>
-<p>This module does nothing on its own.  It is a ground for developing
-advanced connector modules. For further information, please go on:
-<a class="reference external" href="http://odoo-connector.com">http://odoo-connector.com</a></p>
+<p>Configure an Amazon backend, marketplaces, and at least one shop, then:</p>
+<ol class="arabic simple">
+<li>Authorize SP-API credentials (LWA + IAM role).</li>
+<li>Run order import/catalog sync jobs (or enable scheduled crons).</li>
+<li>Use read-only mode for validation in sandbox/live dry runs.</li>
+<li>Enable the webhook endpoint for near real-time SNS updates.</li>
+</ol>
+<p>See CONFIGURATION and ARCHITECTURE docs for detailed setup steps.</p>
 </div>
 <div class="section" id="changelog">
 <h1><a class="toc-backref" href="#toc-entry-2">Changelog</a></h1>
@@ -411,18 +415,19 @@ This file may contain ONE level of section titles, underlined
 with the ~ (tilde) character. Other section markers are
 forbidden and will likely break the structure of the README.rst
 or other documents where this fragment is included. ] -->
-<div class="section" id="next">
-<h2><a class="toc-backref" href="#toc-entry-3">Next</a></h2>
-</div>
 <div class="section" id="section-1">
-<h2><a class="toc-backref" href="#toc-entry-4">12.0.1.0.0 (2018-11-26)</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-3">16.0.1.0.0 (2026-02-28)</a></h2>
 <ul class="simple">
-<li>[MIGRATION] from 12.0 branched at rev. 324e006</li>
+<li>Initial release of Amazon SP-API connector for Odoo 16.0.</li>
+<li>Order import, inventory push, competitive pricing, bulk catalog sync.</li>
+<li>Webhook endpoint for Amazon SNS notifications.</li>
+<li>Coexistence support with Odoo Enterprise <tt class="docutils literal">sale_amazon</tt> module.</li>
+<li>Generic listing enrichment provider integration.</li>
 </ul>
 </div>
 </div>
 <div class="section" id="bug-tracker">
-<h1><a class="toc-backref" href="#toc-entry-5">Bug Tracker</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-4">Bug Tracker</a></h1>
 <p>Bugs are tracked on <a class="reference external" href="https://github.com/OCA/connector/issues">GitHub Issues</a>.
 In case of trouble, please check there if your issue has already been reported.
 If you spotted it first, help us to smash it by providing a detailed and welcomed
@@ -430,21 +435,21 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 <p>Do not contact contributors directly about support or help with technical issues.</p>
 </div>
 <div class="section" id="credits">
-<h1><a class="toc-backref" href="#toc-entry-6">Credits</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-5">Credits</a></h1>
 <div class="section" id="authors">
-<h2><a class="toc-backref" href="#toc-entry-7">Authors</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-6">Authors</a></h2>
 <ul class="simple">
 <li>Kencove Farm Fence Supplies</li>
 </ul>
 </div>
 <div class="section" id="contributors">
-<h2><a class="toc-backref" href="#toc-entry-8">Contributors</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-7">Contributors</a></h2>
 <ul class="simple">
 <li>Don Kendall &lt;<a class="reference external" href="mailto:dkendall&#64;kencove.com">dkendall&#64;kencove.com</a>&gt;</li>
 </ul>
 </div>
 <div class="section" id="maintainers">
-<h2><a class="toc-backref" href="#toc-entry-9">Maintainers</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-8">Maintainers</a></h2>
 <p>This module is maintained by the OCA.</p>
 <a class="reference external image-reference" href="https://odoo-community.org">
 <img alt="Odoo Community Association" src="https://odoo-community.org/logo.png" />

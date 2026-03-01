@@ -16,13 +16,12 @@ class TestEECoexistence(CommonConnectorAmazonSpapi):
     def test_sale_amazon_installed_true_when_present(self):
         """sale_amazon_installed is True when ir.module.module shows installed."""
         IrModule = self.env["ir.module.module"].sudo()
-        # Create a fake module record to simulate sale_amazon being installed
-        IrModule.create(
-            {
-                "name": "sale_amazon",
-                "state": "installed",
-            }
-        )
+        # Find or create a module record to simulate sale_amazon being installed
+        module = IrModule.search([("name", "=", "sale_amazon")], limit=1)
+        if module:
+            module.write({"state": "installed"})
+        else:
+            IrModule.create({"name": "sale_amazon", "state": "installed"})
         # Recompute
         self.backend.invalidate_recordset(["sale_amazon_installed"])
         self.assertTrue(self.backend.sale_amazon_installed)
@@ -42,7 +41,11 @@ class TestEECoexistence(CommonConnectorAmazonSpapi):
         """Orders already imported by sale_amazon are skipped."""
         # Simulate sale_amazon_installed = True
         IrModule = self.env["ir.module.module"].sudo()
-        IrModule.create({"name": "sale_amazon", "state": "installed"})
+        module = IrModule.search([("name", "=", "sale_amazon")], limit=1)
+        if module:
+            module.write({"state": "installed"})
+        else:
+            IrModule.create({"name": "sale_amazon", "state": "installed"})
         self.backend.invalidate_recordset(["sale_amazon_installed"])
 
         amazon_order_data = self._create_sample_amazon_order()

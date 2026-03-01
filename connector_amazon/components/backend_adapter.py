@@ -216,14 +216,25 @@ class AmazonInventoryAdapter(AmazonBaseAdapter):
         Returns:
             dict: Feed creation response with feedId
         """
+        import requests
+
         feed_adapter = self.component(usage="feed.adapter")
 
-        # Create and submit feed document
-        # The feed adapter handles: create_feed_document -> upload -> create_feed
+        # Step 1: Create feed document to get presigned upload URL
         doc_response = feed_adapter.create_feed_document()
         feed_document_id = doc_response.get("feedDocumentId")
+        upload_url = doc_response.get("url")
 
-        # Create feed submission with the document
+        # Step 2: Upload feed content to the presigned S3 URL
+        if upload_url and feed_content:
+            requests.put(
+                upload_url,
+                data=feed_content.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=UTF-8"},
+                timeout=60,
+            )
+
+        # Step 3: Create feed submission referencing the uploaded document
         return feed_adapter.create_feed(
             "POST_INVENTORY_AVAILABILITY_DATA", feed_document_id, marketplace_ids
         )

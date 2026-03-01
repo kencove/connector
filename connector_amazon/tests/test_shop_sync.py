@@ -357,6 +357,7 @@ class TestCronMethods(CommonConnectorAmazonSpapi):
         # Create done picking without tracking ref
         self._create_done_picking(order.odoo_id)
 
-        self.shop.cron_push_shipments()
+        # cron_push_shipments is now @api.model, call on model
+        self.env["amz.shop"].cron_push_shipments()
 
         self.assertFalse(order.shipment_confirmed)

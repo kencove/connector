@@ -44,9 +44,14 @@ Uses the ``amz.*`` model namespace to coexist with the Odoo Enterprise
 Usage
 =====
 
-This module does nothing on its own.  It is a ground for developing
-advanced connector modules. For further information, please go on:
-http://odoo-connector.com
+Configure an Amazon backend, marketplaces, and at least one shop, then:
+
+1. Authorize SP-API credentials (LWA + IAM role).
+2. Run order import/catalog sync jobs (or enable scheduled crons).
+3. Use read-only mode for validation in sandbox/live dry runs.
+4. Enable the webhook endpoint for near real-time SNS updates.
+
+See CONFIGURATION and ARCHITECTURE docs for detailed setup steps.
 
 Changelog
 =========
@@ -61,13 +66,14 @@ Changelog
     forbidden and will likely break the structure of the README.rst
     or other documents where this fragment is included. ]
 
-Next
-~~~~
+16.0.1.0.0 (2026-02-28)
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-12.0.1.0.0 (2018-11-26)
-~~~~~~~~~~~~~~~~~~~~~~~
-
-* [MIGRATION] from 12.0 branched at rev. 324e006
+* Initial release of Amazon SP-API connector for Odoo 16.0.
+* Order import, inventory push, competitive pricing, bulk catalog sync.
+* Webhook endpoint for Amazon SNS notifications.
+* Coexistence support with Odoo Enterprise ``sale_amazon`` module.
+* Generic listing enrichment provider integration.
 
 Bug Tracker
 ===========

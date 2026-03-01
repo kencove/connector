@@ -3,7 +3,7 @@
 
 from datetime import timedelta
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 
 
 class AmazonCompetitivePrice(models.Model):
@@ -186,6 +186,18 @@ class AmazonCompetitivePrice(models.Model):
                 },
             }
 
+        # Validate currency matches pricelist
+        pricelist_currency = shop.pricelist_id.currency_id
+        if self.currency_id != pricelist_currency:
+            price = self.currency_id._convert(
+                self.listing_price,
+                pricelist_currency,
+                shop.company_id or self.env.company,
+                fields.Date.today(),
+            )
+        else:
+            price = self.listing_price
+
         # Create or update pricelist item
         pricelist_item = self.env["product.pricelist.item"].search(
             [
@@ -199,7 +211,7 @@ class AmazonCompetitivePrice(models.Model):
         vals = {
             "pricelist_id": shop.pricelist_id.id,
             "product_id": self.product_id.id,
-            "fixed_price": self.listing_price,
+            "fixed_price": price,
             "compute_price": "fixed",
             "applied_on": "0_product_variant",
         }
@@ -214,10 +226,8 @@ class AmazonCompetitivePrice(models.Model):
             "tag": "display_notification",
             "params": {
                 "title": "Price Updated",
-                "message": (
-                    "Pricelist updated to %.2f %s"
-                    % (self.listing_price, self.currency_id.name)
-                ),
+                "message": _("Pricelist updated to %(price).2f %(currency)s")
+                % {"price": price, "currency": pricelist_currency.name},
                 "type": "success",
             },
         }

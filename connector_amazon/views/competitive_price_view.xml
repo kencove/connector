@@ -149,12 +149,12 @@
                 <filter
                     string="Last 7 Days"
                     name="last_7_days"
-                    domain="[('fetch_date', '&gt;=', (context_today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))]"
+                    domain="[('fetch_date', '&gt;=', (context_today() - relativedelta(days=7)).strftime('%Y-%m-%d'))]"
                 />
                 <filter
                     string="Last 30 Days"
                     name="last_30_days"
-                    domain="[('fetch_date', '&gt;=', (context_today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d'))]"
+                    domain="[('fetch_date', '&gt;=', (context_today() - relativedelta(days=30)).strftime('%Y-%m-%d'))]"
                 />
                 <group expand="0" string="Group By">
                     <filter

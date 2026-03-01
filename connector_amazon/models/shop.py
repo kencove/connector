@@ -650,27 +650,34 @@ class AmazonShop(models.Model):
             if daily_shops:
                 daily_shops.action_sync_orders()
 
+    @api.model
     def cron_push_shipments(self):
         """Cron job to push shipment tracking for shipped orders."""
-        order_bindings = self.env["amz.sale.order"].search(
-            [
-                ("backend_id", "=", self.backend_id.id),
-                ("shipment_confirmed", "=", False),
-            ]
-        )
+        shops = self.search([("active", "=", True)])
+        for shop in shops:
+            order_bindings = self.env["amz.sale.order"].search(
+                [
+                    ("backend_id", "=", shop.backend_id.id),
+                    ("shop_id", "=", shop.id),
+                    ("shipment_confirmed", "=", False),
+                ]
+            )
 
-        for binding in order_bindings:
-            picking = binding._get_last_done_picking()
-            if not picking:
-                continue
-            # Only push if tracking is present
-            if not (picking.carrier_id and picking.carrier_tracking_ref):
-                continue
-            try:
-                binding.with_delay().push_shipment()
-            except Exception:
-                # let the job record the error; continue others
-                continue
+            for binding in order_bindings:
+                picking = binding._get_last_done_picking()
+                if not picking:
+                    continue
+                # Only push if tracking is present
+                if not (picking.carrier_id and picking.carrier_tracking_ref):
+                    continue
+                try:
+                    binding.with_delay().push_shipment()
+                except Exception:
+                    _logger.exception(
+                        "Failed to queue shipment push for order %s",
+                        binding.external_id,
+                    )
+                    continue
 
     @api.model
     def cron_sync_competitive_prices(self):
