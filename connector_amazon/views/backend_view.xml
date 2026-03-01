@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <record id="view_amz_backend_tree" model="ir.ui.view">
+        <field name="name">amz.backend.tree</field>
+        <field name="model">amz.backend</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name" />
+                <field name="code" />
+                <field name="version" />
+                <field name="seller_id" />
+                <field name="region" />
+                <field name="company_id" />
+                <field name="test_mode" />
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_amz_backend_form" model="ir.ui.view">
+        <field name="name">amz.backend.form</field>
+        <field name="model">amz.backend</field>
+        <field name="arch" type="xml">
+            <form string="Amazon Backend">
+                <header>
+                    <button
+                        name="action_test_connection"
+                        string="Test Connection"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button
+                        name="action_fetch_marketplaces"
+                        type="object"
+                        string="Fetch Marketplaces"
+                    />
+                </header>
+                <sheet>
+                    <field name="sale_amazon_installed" invisible="1" />
+                    <div
+                        class="alert alert-warning"
+                        role="alert"
+                        attrs="{'invisible': [('sale_amazon_installed', '=', False)]}"
+                    >
+                        <strong>Odoo Enterprise sale_amazon detected.</strong>
+                        Both modules can coexist, but to avoid duplicate order
+                        imports you should enable
+                        <em>Disable EE Order Sync</em> below. This deactivates
+                        the sale_amazon cron jobs so only this connector fetches
+                        orders.
+                    </div>
+                    <group>
+                        <field name="name" />
+                        <field name="code" />
+                        <field name="version" readonly="1" />
+                        <field name="region" />
+                        <field name="company_id" />
+                        <field name="warehouse_id" />
+                        <field name="test_mode" />
+                        <field
+                            name="read_only_mode"
+                            widget="boolean_toggle"
+                            attrs="{'invisible': [('test_mode', '=', False)]}"
+                        />
+                    </group>
+                    <group string="Credentials">
+                        <field name="seller_id" />
+                        <field name="lwa_client_id" password="True" />
+                        <field name="lwa_client_secret" password="True" />
+                        <field name="lwa_refresh_token" password="True" />
+                        <field name="aws_role_arn" />
+                        <field name="aws_external_id" />
+                        <field name="endpoint" />
+                    </group>
+                    <group string="Flags">
+                        <field name="enable_price_sync" />
+                        <field name="enable_stock_sync" />
+                        <field
+                            name="disable_ee_order_sync"
+                            widget="boolean_toggle"
+                            attrs="{'invisible': [('sale_amazon_installed', '=', False)]}"
+                        />
+                    </group>
+                    <group string="Webhook Configuration">
+                        <group>
+                            <field name="webhook_active" widget="boolean_toggle" />
+                            <field
+                                name="webhook_url"
+                                widget="CopyClipboardChar"
+                                attrs="{'invisible': [('webhook_active', '=', False)]}"
+                            />
+                            <field
+                                name="webhook_token"
+                                password="True"
+                                attrs="{'invisible': [('webhook_active', '=', False)]}"
+                            />
+                        </group>
+                        <group attrs="{'invisible': [('webhook_active', '=', False)]}">
+                            <field name="notify_order_change" />
+                            <field name="notify_listings_change" />
+                            <field name="notify_feed_processing" />
+                            <field name="notify_report_processing" />
+                        </group>
+                    </group>
+                    <group string="Listing Enrichment">
+                        <group>
+                            <field name="enrichment_provider" />
+                            <field
+                                name="enrichment_base_url"
+                                placeholder="https://amazon-hub.kencove.com"
+                                attrs="{'invisible': [('enrichment_provider', '=', 'none')]}"
+                            />
+                            <field
+                                name="enrichment_api_key"
+                                password="True"
+                                attrs="{'invisible': [('enrichment_provider', '=', 'none')]}"
+                            />
+                            <field
+                                name="enrichment_brand_id"
+                                placeholder="kencove"
+                                attrs="{'invisible': [('enrichment_provider', '=', 'none')]}"
+                            />
+                        </group>
+                        <group
+                            attrs="{'invisible': [('enrichment_provider', 'in', ('none', False))]}"
+                        >
+                            <field name="enrichment_api_key_header" />
+                            <field name="enrichment_key_in_query" />
+                            <field name="enrichment_lookup_template" />
+                            <field name="enrichment_dashboard_template" />
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Marketplaces">
+                            <field name="marketplace_ids">
+                                <tree editable="bottom">
+                                    <field name="name" />
+                                    <field name="code" />
+                                    <field name="marketplace_id" />
+                                    <field name="currency_id" />
+                                    <field name="country_code" />
+                                    <field name="order_status_filter" />
+                                    <field name="fulfillment_channel_filter" />
+                                    <field name="active" />
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Shops">
+                            <field name="shop_ids">
+                                <tree editable="bottom">
+                                    <field name="name" />
+                                    <field name="marketplace_id" />
+                                    <field name="company_id" />
+                                    <field name="warehouse_id" />
+                                    <field name="pricelist_id" />
+                                    <field name="import_orders" />
+                                    <field name="sync_stock" />
+                                    <field name="sync_price" />
+                                    <field name="include_afn" />
+                                    <field name="stock_policy" />
+                                    <field name="last_order_sync" />
+                                    <field name="order_sync_lookback_days" />
+                                    <field name="active" />
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Notes">
+                            <field name="note" nolabel="1" />
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_amz_backend" model="ir.actions.act_window">
+        <field name="name">Amazon Backends</field>
+        <field name="res_model">amz.backend</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+</odoo>
