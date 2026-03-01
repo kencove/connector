@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <menuitem
+        id="menu_amz_root"
+        name="Amazon"
+        parent="connector.menu_connector"
+        sequence="30"
+        groups="connector.group_connector_manager"
+    />
+    <menuitem
+        id="menu_amz_backend"
+        name="Backends"
+        parent="menu_amz_root"
+        action="action_amz_backend"
+        sequence="10"
+        groups="connector.group_connector_manager"
+    />
+    <menuitem
+        id="menu_amz_marketplace"
+        name="Marketplaces"
+        parent="menu_amz_root"
+        action="action_amz_marketplace"
+        sequence="20"
+        groups="connector.group_connector_manager"
+    />
+    <menuitem
+        id="menu_amz_shop"
+        name="Shops"
+        parent="menu_amz_root"
+        action="action_amz_shop"
+        sequence="30"
+        groups="connector.group_connector_manager"
+    />
+    <menuitem
+        id="menu_amz_product_binding"
+        name="Product Bindings"
+        parent="menu_amz_root"
+        action="action_amz_product_binding"
+        sequence="40"
+        groups="connector.group_connector_manager"
+    />
+    <menuitem
+        id="menu_amz_order"
+        name="Orders"
+        parent="menu_amz_root"
+        action="action_amz_order"
+        sequence="50"
+        groups="connector.group_connector_manager"
+    />
+    <menuitem
+        id="menu_amz_feed"
+        name="Feeds"
+        parent="menu_amz_root"
+        action="action_amz_feed"
+        sequence="60"
+        groups="connector.group_connector_manager"
+    />
+    <menuitem
+        id="menu_amz_notification_log"
+        name="Notification Logs"
+        parent="menu_amz_root"
+        action="action_amz_notification_log"
+        sequence="70"
+        groups="connector.group_connector_manager"
+    />
+</odoo>

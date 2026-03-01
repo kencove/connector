@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!-- Notification Log Tree View -->
+    <record id="view_amz_notification_log_tree" model="ir.ui.view">
+        <field name="name">amz.notification.log.tree</field>
+        <field name="model">amz.notification.log</field>
+        <field name="arch" type="xml">
+            <tree
+                decoration-danger="state == 'error'"
+                decoration-warning="state == 'ignored'"
+                decoration-success="state in ('processed', 'confirmed')"
+            >
+                <field name="create_date" string="Received" />
+                <field name="notification_type" />
+                <field name="message_id" />
+                <field name="state" />
+                <field name="backend_id" />
+                <field name="order_id" optional="hide" />
+                <field name="product_binding_id" optional="hide" />
+                <field name="feed_id" optional="hide" />
+                <field name="retry_count" optional="hide" />
+                <field name="processed_date" optional="hide" />
+            </tree>
+        </field>
+    </record>
+
+    <!-- Notification Log Form View -->
+    <record id="view_amz_notification_log_form" model="ir.ui.view">
+        <field name="name">amz.notification.log.form</field>
+        <field name="model">amz.notification.log</field>
+        <field name="arch" type="xml">
+            <form string="Notification Log">
+                <header>
+                    <button
+                        name="action_retry"
+                        string="Retry Processing"
+                        type="object"
+                        class="btn-primary"
+                        attrs="{'invisible': [('state', 'not in', ['error', 'ignored'])]}"
+                    />
+                    <field
+                        name="state"
+                        widget="statusbar"
+                        statusbar_visible="received,processing,processed"
+                    />
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Notification Details">
+                            <field name="backend_id" />
+                            <field name="notification_type" />
+                            <field name="message_id" />
+                            <field name="topic_arn" />
+                            <field name="create_date" string="Received At" />
+                            <field name="processed_date" />
+                            <field name="retry_count" />
+                        </group>
+                        <group string="Related Records">
+                            <field name="order_id" />
+                            <field name="product_binding_id" />
+                            <field name="feed_id" />
+                        </group>
+                    </group>
+                    <group
+                        string="Error"
+                        attrs="{'invisible': [('error_message', '=', False)]}"
+                    >
+                        <field name="error_message" nolabel="1" colspan="2" />
+                    </group>
+                    <notebook>
+                        <page string="Payload" name="payload">
+                            <field
+                                name="payload"
+                                widget="ace"
+                                options="{'mode': 'json'}"
+                            />
+                        </page>
+                        <page string="Raw Message" name="raw_message">
+                            <field
+                                name="raw_message"
+                                widget="ace"
+                                options="{'mode': 'json'}"
+                            />
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Notification Log Raw Form (popup) -->
+    <record id="view_notification_log_raw_form" model="ir.ui.view">
+        <field name="name">amz.notification.log.raw.form</field>
+        <field name="model">amz.notification.log</field>
+        <field name="arch" type="xml">
+            <form string="Raw Message">
+                <sheet>
+                    <field
+                        name="raw_message"
+                        widget="ace"
+                        options="{'mode': 'json'}"
+                        readonly="1"
+                    />
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Notification Log Search View -->
+    <record id="view_amz_notification_log_search" model="ir.ui.view">
+        <field name="name">amz.notification.log.search</field>
+        <field name="model">amz.notification.log</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="notification_type" />
+                <field name="message_id" />
+                <field name="backend_id" />
+                <field name="state" />
+                <filter
+                    name="filter_errors"
+                    string="Errors"
+                    domain="[('state', '=', 'error')]"
+                />
+                <filter
+                    name="filter_today"
+                    string="Today"
+                    domain="[('create_date', '>=', (context_today()).strftime('%Y-%m-%d'))]"
+                />
+                <separator />
+                <filter
+                    name="filter_order_change"
+                    string="Order Changes"
+                    domain="[('notification_type', '=', 'ORDER_CHANGE')]"
+                />
+                <filter
+                    name="filter_listings_change"
+                    string="Listings Changes"
+                    domain="[('notification_type', '=', 'LISTINGS_ITEM_STATUS_CHANGE')]"
+                />
+                <filter
+                    name="filter_feed_finished"
+                    string="Feed Finished"
+                    domain="[('notification_type', '=', 'FEED_PROCESSING_FINISHED')]"
+                />
+                <group expand="0" string="Group By">
+                    <filter
+                        name="group_type"
+                        string="Notification Type"
+                        context="{'group_by': 'notification_type'}"
+                    />
+                    <filter
+                        name="group_state"
+                        string="State"
+                        context="{'group_by': 'state'}"
+                    />
+                    <filter
+                        name="group_backend"
+                        string="Backend"
+                        context="{'group_by': 'backend_id'}"
+                    />
+                    <filter
+                        name="group_date"
+                        string="Date"
+                        context="{'group_by': 'create_date:day'}"
+                    />
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Notification Log Action -->
+    <record id="action_amz_notification_log" model="ir.actions.act_window">
+        <field name="name">Notification Logs</field>
+        <field name="res_model">amz.notification.log</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_amz_notification_log_search" />
+        <field name="context">{'search_default_filter_today': 1}</field>
+    </record>
+</odoo>
