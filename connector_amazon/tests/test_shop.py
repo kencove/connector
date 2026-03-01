@@ -4,9 +4,12 @@
 from datetime import datetime, timedelta
 from unittest import mock
 
+from odoo.tests import tagged
+
 from . import common
 
 
+@tagged("post_install", "-at_install")
 class TestAmazonShop(common.CommonConnectorAmazonSpapi):
     """Tests for amz.shop model"""
 

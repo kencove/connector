@@ -123,6 +123,18 @@ class AmazonBackend(models.Model):
         readonly=True,
         help="Amazon SP-API destination ID for this webhook.",
     )
+    sns_subscription_order_id = fields.Char(
+        readonly=True, string="SNS Order Subscription ID"
+    )
+    sns_subscription_listings_id = fields.Char(
+        readonly=True, string="SNS Listings Subscription ID"
+    )
+    sns_subscription_feed_id = fields.Char(
+        readonly=True, string="SNS Feed Subscription ID"
+    )
+    sns_subscription_report_id = fields.Char(
+        readonly=True, string="SNS Report Subscription ID"
+    )
     notification_log_ids = fields.One2many(
         comodel_name="amz.notification.log",
         inverse_name="backend_id",
@@ -408,7 +420,7 @@ class AmazonBackend(models.Model):
         if (
             not self.access_token
             or not self.token_expires_at
-            or self.token_expires_at <= datetime.now()
+            or self.token_expires_at <= fields.Datetime.now()
         ):
             self._refresh_access_token()
 
@@ -560,7 +572,7 @@ class AmazonBackend(models.Model):
             # Prefer the already-linked marketplaces to avoid missing the
             # record when the database search ignores an unflushed cache.
             existing = self.marketplace_ids.filtered(
-                lambda m: m.marketplace_id == marketplace_id
+                lambda m, mp_id=marketplace_id: m.marketplace_id == mp_id
             )
             if not existing:
                 existing = Marketplace.search(
@@ -612,3 +624,99 @@ class AmazonBackend(models.Model):
                     "sticky": False,
                 },
             }
+
+    def action_manage_subscriptions(self):
+        """Create or delete SP-API notification subscriptions.
+
+        Reads the ``notify_*`` boolean flags and compares them against the
+        stored ``sns_subscription_*_id`` values.  Creates subscriptions for
+        newly-enabled types and deletes subscriptions for disabled types.
+        """
+        self.ensure_one()
+
+        if self.read_only_mode:
+            return {
+                "type": "ir.actions.client",
+                "tag": "display_notification",
+                "params": {
+                    "title": _("Read-Only Mode"),
+                    "message": _(
+                        "Subscription management is disabled in read-only mode."
+                    ),
+                    "type": "warning",
+                    "sticky": False,
+                },
+            }
+
+        if not self.webhook_active:
+            raise UserError(
+                _("Enable the webhook endpoint before managing subscriptions.")
+            )
+
+        with self.work_on("amz.backend") as work:
+            adapter = work.component(usage="notifications.adapter")
+
+            # Ensure destination exists
+            if not self.sns_destination_id:
+                dest_resp = adapter.create_destination(
+                    name=f"odoo-{self.code or self.id}",
+                    arn=self.webhook_url,
+                    resource_type="SQS",
+                )
+                dest_id = (dest_resp.get("payload") or {}).get("destinationId")
+                if not dest_id:
+                    raise UserError(
+                        _(
+                            "Failed to create SNS destination: no destinationId returned."
+                        )
+                    )
+                self.sns_destination_id = dest_id
+
+            # Map: (notify flag field, sub id field, notification type)
+            sub_map = [
+                ("notify_order_change", "sns_subscription_order_id", "ORDER_CHANGE"),
+                (
+                    "notify_listings_change",
+                    "sns_subscription_listings_id",
+                    "LISTINGS_ITEM_STATUS_CHANGE",
+                ),
+                (
+                    "notify_feed_processing",
+                    "sns_subscription_feed_id",
+                    "FEED_PROCESSING_FINISHED",
+                ),
+                (
+                    "notify_report_processing",
+                    "sns_subscription_report_id",
+                    "REPORT_PROCESSING_FINISHED",
+                ),
+            ]
+
+            for flag_field, sub_id_field, notification_type in sub_map:
+                enabled = getattr(self, flag_field)
+                existing_sub = getattr(self, sub_id_field)
+
+                if enabled and not existing_sub:
+                    resp = adapter.create_subscription(
+                        notification_type=notification_type,
+                        destination_id=self.sns_destination_id,
+                    )
+                    new_sub_id = (resp.get("payload") or {}).get("subscriptionId")
+                    self.write({sub_id_field: new_sub_id})
+                elif not enabled and existing_sub:
+                    adapter.delete_subscription(
+                        notification_type=notification_type,
+                        subscription_id=existing_sub,
+                    )
+                    self.write({sub_id_field: False})
+
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": _("Subscriptions Updated"),
+                "message": _("Notification subscriptions have been updated."),
+                "type": "success",
+                "sticky": False,
+            },
+        }

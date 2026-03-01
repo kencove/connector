@@ -382,7 +382,7 @@ class AmazonSaleOrder(models.Model):
             or "Standard"
         )
 
-        merchant_id = self.backend_id.lwa_client_id
+        merchant_id = self.backend_id.seller_id
         fulfillment_date = (
             fields.Datetime.to_string(picking.date_done)
             if picking.date_done
@@ -416,7 +416,7 @@ class AmazonSaleOrder(models.Model):
         ET.SubElement(fulfillment_data, "ShippingMethod").text = ship_method
         ET.SubElement(fulfillment_data, "ShipperTrackingNumber").text = tracking
 
-        # Add line items
+        # Add line items — skip lines without an Amazon binding
         for line in self.odoo_id.order_line:
             # Try to find Amazon line binding to get AmazonOrderItemCode
             line_binding = self.env["amz.sale.order.line"].search(
@@ -426,11 +426,12 @@ class AmazonSaleOrder(models.Model):
                 ],
                 limit=1,
             )
-            amazon_item_code = line_binding.external_id or ""
+            if not (line_binding and line_binding.external_id):
+                continue
             qty = int(line.product_uom_qty)
 
             item = ET.SubElement(fulfillment, "Item")
-            ET.SubElement(item, "AmazonOrderItemCode").text = amazon_item_code
+            ET.SubElement(item, "AmazonOrderItemCode").text = line_binding.external_id
             ET.SubElement(item, "Quantity").text = str(qty)
 
         return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(
@@ -465,7 +466,6 @@ class AmazonSaleOrder(models.Model):
         feed.with_delay().submit_feed()
         self.write(
             {
-                "shipment_confirmed": True,
                 "last_shipment_push": fields.Datetime.now(),
             }
         )
@@ -501,12 +501,9 @@ class AmazonSaleOrder(models.Model):
                     limit=1,
                 )
             )
-            _logger.info(
-                "_get_or_create_partner: Looking for email='%s', found=%d, "
-                "partner_ids=%s",
-                email,
+            _logger.debug(
+                "_get_or_create_partner: email lookup found=%d partner(s)",
                 len(partner),
-                partner.ids if partner else [],
             )
             if len(partner) > 0:
                 _logger.info(
@@ -615,7 +612,7 @@ class AmazonSaleOrder(models.Model):
             # Use adapter for API calls via work_on context
             with shop.backend_id.work_on("amz.sale.order.line") as work:
                 adapter = work.component(usage="orders.adapter")
-                result = adapter.get_order_items(amz_order_id)
+                result = adapter.get_order_items(amz_order_id, next_token=next_token)
 
             if not isinstance(result, dict):
                 break

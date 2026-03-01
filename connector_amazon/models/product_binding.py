@@ -91,6 +91,9 @@ class AmazonProductBinding(models.Model):
                 asins=[self.asin],
             )
 
+        # Normalize response — may be a list or dict with payload key
+        if isinstance(result, dict):
+            result = result.get("payload") or result.get("results") or []
         if not result or not isinstance(result, list):
             raise UserError(_("No competitive pricing data returned from Amazon API."))
 

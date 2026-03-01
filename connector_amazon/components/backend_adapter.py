@@ -187,19 +187,38 @@ class AmazonPricingAdapter(AmazonBaseAdapter):
             "GET", "/products/pricing/2022-05-01/price", params=params
         )
 
-    def create_price_feed(self, feed_content):
+    def create_price_feed(self, feed_content, marketplace_ids):
         """Submit price feed through Feeds API
 
         Args:
             feed_content: XML feed content as string
+            marketplace_ids: List of marketplace IDs
 
         Returns:
             dict: Feed creation response with feedId
         """
-        # Price feeds are submitted through the generic feed adapter
-        # This is a wrapper for consistency
+        import requests
+
         feed_adapter = self.component(usage="feed.adapter")
-        return feed_adapter.create_feed("POST_PRODUCT_PRICING_DATA", feed_content)
+
+        # Step 1: Create feed document to get presigned upload URL
+        doc_response = feed_adapter.create_feed_document()
+        feed_document_id = doc_response.get("feedDocumentId")
+        upload_url = doc_response.get("url")
+
+        # Step 2: Upload feed content to the presigned S3 URL
+        if upload_url and feed_content:
+            requests.put(
+                upload_url,
+                data=feed_content.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=UTF-8"},
+                timeout=60,
+            )
+
+        # Step 3: Create feed submission referencing the uploaded document
+        return feed_adapter.create_feed(
+            "POST_PRODUCT_PRICING_DATA", feed_document_id, marketplace_ids
+        )
 
 
 class AmazonInventoryAdapter(AmazonBaseAdapter):
@@ -625,12 +644,18 @@ class AmazonNotificationsAdapter(AmazonBaseAdapter):
                 "resourceSpecification": {"sqs": {"arn": arn}},
             }
         elif resource_type == "EVENT_BRIDGE":
+            arn_parts = arn.split(":")
+            if len(arn_parts) < 5:
+                raise ValueError(
+                    f"Invalid ARN format: {arn}. "
+                    "Expected format: arn:partition:service:region:account-id:resource"
+                )
             payload = {
                 "name": name,
                 "resourceSpecification": {
                     "eventBridge": {
-                        "accountId": arn.split(":")[4],  # Extract account ID from ARN
-                        "region": arn.split(":")[3],  # Extract region from ARN
+                        "accountId": arn_parts[4],
+                        "region": arn_parts[3],
                     }
                 },
             }

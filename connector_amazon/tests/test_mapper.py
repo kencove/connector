@@ -6,19 +6,13 @@ from .common import CommonConnectorAmazonSpapi
 
 
 class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.mapper = cls.env["amz.order.import.mapper"]
-
     def test_map_buyer_phone_present(self):
         """Test that buyer phone number is mapped when present"""
         record = {"BuyerPhoneNumber": "+1-555-1234"}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-        result = mapper_instance.map_buyer_phone(record)
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_buyer_phone(record)
 
         self.assertEqual(result, {"buyer_phone": "+1-555-1234"})
 
@@ -26,10 +20,9 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
         """Test that empty dict is returned when phone is missing"""
         record = {}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-        result = mapper_instance.map_buyer_phone(record)
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_buyer_phone(record)
 
         self.assertEqual(result, {})
 
@@ -37,13 +30,12 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
         """Test that ValueError is raised when shop is missing"""
         record = {}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-        mapper_instance.options = {}
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            mapper.options = {}
 
-        with self.assertRaises(ValueError) as cm:
-            mapper_instance.map_backend_and_shop(record)
+            with self.assertRaises(ValueError) as cm:
+                mapper.map_backend_and_shop(record)
 
         self.assertIn("Shop is required", str(cm.exception))
 
@@ -51,12 +43,11 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
         """Test that backend and shop are correctly mapped"""
         record = {}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-        mapper_instance.options = {"shop": self.shop}
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            mapper.options = {"shop": self.shop}
 
-        result = mapper_instance.map_backend_and_shop(record)
+            result = mapper.map_backend_and_shop(record)
 
         self.assertEqual(result["backend_id"], self.shop.backend_id.id)
         self.assertEqual(result["shop_id"], self.shop.id)
@@ -65,12 +56,11 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
         """Test that marketplace is mapped when it matches shop's marketplace"""
         record = {"MarketplaceId": self.marketplace.marketplace_id}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-        mapper_instance.options = {"shop": self.shop}
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            mapper.options = {"shop": self.shop}
 
-        result = mapper_instance.map_marketplace(record)
+            result = mapper.map_marketplace(record)
 
         self.assertEqual(result["marketplace_id"], self.marketplace.id)
 
@@ -78,12 +68,11 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
         """Test that empty dict is returned when marketplace is missing"""
         record = {}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-        mapper_instance.options = {"shop": self.shop}
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            mapper.options = {"shop": self.shop}
 
-        result = mapper_instance.map_marketplace(record)
+            result = mapper.map_marketplace(record)
 
         self.assertEqual(result, {})
 
@@ -105,11 +94,9 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
             },
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-
-        result = mapper_instance.map_partner(record)
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_partner(record)
 
         partner = self.env["res.partner"].browse(result["partner_id"])
         self.assertEqual(partner.name, "John Doe")
@@ -136,21 +123,17 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
             "ShippingAddress": {},
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-
-        result = mapper_instance.map_partner(record)
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_partner(record)
 
         self.assertEqual(result["partner_id"], existing_partner.id)
 
     def test_get_state_id_resolves_us_state(self):
         """Test that US state is correctly resolved"""
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-
-        state_id = mapper_instance._get_state_id("NY", "US")
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            state_id = mapper._get_state_id("NY", "US")
 
         self.assertTrue(state_id)
         state = self.env["res.country.state"].browse(state_id)
@@ -159,23 +142,20 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
 
     def test_get_state_id_missing_inputs(self):
         """Test that False is returned when state or country is missing"""
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
 
-        result = mapper_instance._get_state_id(None, "US")
-        self.assertFalse(result)
+            result = mapper._get_state_id(None, "US")
+            self.assertFalse(result)
 
-        result = mapper_instance._get_state_id("NY", None)
-        self.assertFalse(result)
+            result = mapper._get_state_id("NY", None)
+            self.assertFalse(result)
 
     def test_get_country_id_resolves_us(self):
         """Test that US country is correctly resolved"""
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
-
-        country_id = mapper_instance._get_country_id("US")
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            country_id = mapper._get_country_id("US")
 
         self.assertTrue(country_id)
         country = self.env["res.country"].browse(country_id)
@@ -183,20 +163,14 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
 
     def test_get_country_id_missing_input(self):
         """Test that False is returned when country code is missing"""
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order")
+        with self.backend.work_on("amz.sale.order") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper._get_country_id(None)
 
-        result = mapper_instance._get_country_id(None)
         self.assertFalse(result)
 
 
 class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.mapper = cls.env["amz.order.line.import.mapper"]
-
     def test_map_quantities_parses_integers(self):
         """Test that integer quantities are correctly parsed"""
         record = {
@@ -204,11 +178,9 @@ class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
             "QuantityShipped": "2",
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order.line")
-
-        result = mapper_instance.map_quantities(record)
+        with self.backend.work_on("amz.sale.order.line") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_quantities(record)
 
         self.assertEqual(result["quantity"], 3.0)
         self.assertEqual(result["quantity_shipped"], 2.0)
@@ -217,11 +189,9 @@ class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
         """Test that missing quantities default to 0"""
         record = {}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order.line")
-
-        result = mapper_instance.map_quantities(record)
+        with self.backend.work_on("amz.sale.order.line") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_quantities(record)
 
         self.assertEqual(result["quantity"], 0.0)
         self.assertEqual(result["quantity_shipped"], 0.0)
@@ -233,11 +203,9 @@ class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
             "QuantityShipped": None,
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order.line")
-
-        result = mapper_instance.map_quantities(record)
+        with self.backend.work_on("amz.sale.order.line") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_quantities(record)
 
         self.assertEqual(result["quantity"], 0.0)
         self.assertEqual(result["quantity_shipped"], 0.0)
@@ -246,13 +214,12 @@ class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
         """Test that ValueError is raised when amazon_order is missing"""
         record = {}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order.line")
-        mapper_instance.options = {}
+        with self.backend.work_on("amz.sale.order.line") as work:
+            mapper = work.component(usage="import.mapper")
+            mapper.options = {}
 
-        with self.assertRaises(ValueError) as cm:
-            mapper_instance.map_order(record)
+            with self.assertRaises(ValueError) as cm:
+                mapper.map_order(record)
 
         self.assertIn("Amazon order is required", str(cm.exception))
 
@@ -268,29 +235,24 @@ class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
 
         record = {}
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.sale.order.line")
-        mapper_instance.options = {"amz_order": amazon_order}
+        with self.backend.work_on("amz.sale.order.line") as work:
+            mapper = work.component(usage="import.mapper")
+            mapper.options = {"amz_order": amazon_order}
 
-        result = mapper_instance.map_order(record)
+            result = mapper.map_order(record)
 
         self.assertEqual(result["amz_order_id"], amazon_order.id)
         self.assertEqual(result["backend_id"], self.backend.id)
 
 
 class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.mapper = cls.env["amz.product.price.import.mapper"]
-
     def test_map_competitive_price_extracts_buy_box_price(self):
         """Test that Buy Box competitive price is correctly extracted"""
         product_binding = self.env["amz.product.binding"].create(
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "seller_sku": "TEST-PRICE-SKU-1",
                 "external_id": "TEST-PRODUCT-1",
             }
         )
@@ -330,11 +292,9 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             },
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.product.binding")
-
-        result = mapper_instance.map_competitive_price(pricing_data, product_binding)
+        with self.backend.work_on("amz.product.binding") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_competitive_price(pricing_data, product_binding)
 
         self.assertEqual(result["asin"], "B08N5WRWNW")
         self.assertEqual(result["product_binding_id"], product_binding.id)
@@ -357,6 +317,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "seller_sku": "TEST-PRICE-SKU-2",
                 "external_id": "TEST-PRODUCT-2",
             }
         )
@@ -370,11 +331,9 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             },
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.product.binding")
-
-        result = mapper_instance.map_competitive_price(pricing_data, product_binding)
+        with self.backend.work_on("amz.product.binding") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_competitive_price(pricing_data, product_binding)
 
         self.assertIsNone(result)
 
@@ -384,6 +343,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "seller_sku": "TEST-PRICE-SKU-3",
                 "external_id": "TEST-PRODUCT-3",
             }
         )
@@ -404,11 +364,9 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             },
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.product.binding")
-
-        result = mapper_instance.map_competitive_price(pricing_data, product_binding)
+        with self.backend.work_on("amz.product.binding") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_competitive_price(pricing_data, product_binding)
 
         currency = self.env["res.currency"].browse(result["currency_id"])
         self.assertEqual(currency.name, "USD")
@@ -419,6 +377,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "seller_sku": "TEST-PRICE-SKU-4",
                 "external_id": "TEST-PRODUCT-4",
             }
         )
@@ -448,11 +407,9 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             },
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.product.binding")
-
-        result = mapper_instance.map_competitive_price(pricing_data, product_binding)
+        with self.backend.work_on("amz.product.binding") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_competitive_price(pricing_data, product_binding)
 
         self.assertEqual(result["number_of_offers_new"], 3)
         # Should sum Used + Refurbished + Collectible = 4 + 2 + 1 = 7
@@ -464,6 +421,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "seller_sku": "TEST-PRICE-SKU-5",
                 "external_id": "TEST-PRODUCT-5",
             }
         )
@@ -489,11 +447,9 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             },
         }
 
-        mapper_instance = self.mapper.with_context(
-            amazon_backend_id=self.backend.id
-        ).work_on(model_name="amz.product.binding")
-
-        result = mapper_instance.map_competitive_price(pricing_data, product_binding)
+        with self.backend.work_on("amz.product.binding") as work:
+            mapper = work.component(usage="import.mapper")
+            result = mapper.map_competitive_price(pricing_data, product_binding)
 
         self.assertFalse(result["is_buy_box_winner"])
         self.assertFalse(result["is_featured_merchant"])

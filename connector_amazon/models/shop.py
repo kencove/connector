@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from xml.sax.saxutils import escape as xml_escape
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
@@ -426,7 +427,6 @@ class AmazonShop(models.Model):
         for row in reader:
             sku = row.get("seller-sku")
             asin = row.get("asin1")
-            row.get("status", "").lower()
 
             # Skip if no SKU or inactive
             if not sku:
@@ -694,7 +694,9 @@ class AmazonShop(models.Model):
                     updated_since=shop.last_price_sync
                 )
             except Exception:
-                # Let job queue record errors; continue to next shop
+                _logger.exception(
+                    "Failed to queue competitive price sync for shop %s", shop.name
+                )
                 continue
 
     @api.model
@@ -792,14 +794,16 @@ class AmazonShop(models.Model):
         Returns XML string following Amazon's Inventory Feed schema.
         Ref: https://sellercentral.amazon.com/gp/help/200386250
         """
-        merchant_id = self.backend_id.lwa_client_id
+        merchant_id = self.backend_id.seller_id
         xml_lines = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             '<AmazonEnvelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
             '    xsi:noNamespaceSchemaLocation="amzn-envelope.xsd">',
             "  <Header>",
             "    <DocumentVersion>1.01</DocumentVersion>",
-            "    <MerchantIdentifier>" + merchant_id + "</MerchantIdentifier>",
+            "    <MerchantIdentifier>"
+            + xml_escape(merchant_id or "")
+            + "</MerchantIdentifier>",
             "  </Header>",
             "  <MessageType>Inventory</MessageType>",
         ]
@@ -813,7 +817,7 @@ class AmazonShop(models.Model):
                     "  <Message>",
                     "    <MessageID>%d</MessageID>" % idx,
                     "    <Inventory>",
-                    "      <SKU>%s</SKU>" % binding.seller_sku,
+                    "      <SKU>%s</SKU>" % xml_escape(binding.seller_sku or ""),
                     "      <Quantity>",
                     "        <Available>%d</Available>" % int(available_qty),
                     "      </Quantity>",

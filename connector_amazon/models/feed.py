@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 
+import requests
+
 from odoo import _, fields, models
 from odoo.exceptions import UserError
 
@@ -67,13 +69,13 @@ class AmazonFeed(models.Model):
 
         # Check if backend is in read-only mode
         if self.backend_id.read_only_mode:
+            payload_preview = self.payload_json or ""
             _logger.info(
                 "[READ-ONLY MODE] Feed %s (%s) would be submitted to Amazon. "
                 "Payload preview:\n%s",
                 self.id,
                 self.feed_type,
-                self.payload_json[:1000]
-                + ("..." if len(self.payload_json) > 1000 else ""),
+                payload_preview[:1000] + ("..." if len(payload_preview) > 1000 else ""),
             )
             self.write(
                 {
@@ -144,8 +146,6 @@ class AmazonFeed(models.Model):
         Args:
             upload_url: Presigned S3 URL from create feed document response
         """
-        import requests
-
         headers = {"Content-Type": "text/xml; charset=UTF-8"}
         response = requests.put(
             upload_url,

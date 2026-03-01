@@ -283,7 +283,7 @@ class TestNotificationLogModel(CommonConnectorAmazonSpapi):
             "payload": self._create_sample_amazon_order()
         }
 
-        with patch.object(self.backend, "work_on") as mock_work_on:
+        with patch.object(type(self.backend), "work_on") as mock_work_on:
             mock_work = MagicMock()
             mock_work.component.return_value = mock_adapter
             mock_work_on.return_value.__enter__ = MagicMock(return_value=mock_work)

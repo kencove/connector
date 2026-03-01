@@ -138,7 +138,7 @@ class AmazonCompetitivePrice(models.Model):
     _sql_constraints = [
         (
             "amz_competitive_price_unique",
-            "unique(product_binding_id, asin, competitive_price_id, fetch_date)",
+            "unique(product_binding_id, asin, competitive_price_id)",
             "This competitive price entry already exists.",
         ),
     ]
