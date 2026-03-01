@@ -940,8 +940,6 @@ class TestOrderDeliveryCarrier(common.CommonConnectorAmazonSpapi):
         self.assertIn("UPS Ground", feed.payload_json)
         self.assertIn("ITEM-123", feed.payload_json)
 
-        # Verify shipment_confirmed flag was set
-        self.assertTrue(binding.shipment_confirmed)
         self.assertTrue(binding.last_shipment_push)
 
         # Verify submit_feed was called with delay

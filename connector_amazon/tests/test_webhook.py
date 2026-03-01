@@ -163,7 +163,7 @@ class TestWebhookController(CommonConnectorAmazonSpapi):
         log = self.env["amz.notification.log"].create(
             {
                 "backend_id": self.backend.id,
-                "notification_type": "UNKNOWN_TYPE",
+                "notification_type": "other",
                 "message_id": "test-unknown-msg",
                 "state": "received",
                 "payload": json.dumps({"some": "data"}),
@@ -173,7 +173,7 @@ class TestWebhookController(CommonConnectorAmazonSpapi):
         log.process_notification()
 
         self.assertEqual(log.state, "ignored")
-        self.assertIn("No handler", log.error_message)
+        self.assertIn("No handler for type", log.error_message)
 
     def test_notification_log_retry(self):
         """Test retry functionality for failed notifications"""
@@ -190,7 +190,8 @@ class TestWebhookController(CommonConnectorAmazonSpapi):
         )
 
         # Mock with_delay to avoid actual queue job
-        with patch.object(log, "with_delay", return_value=log):
+        with patch.object(type(log), "with_delay") as mock_delay:
+            mock_delay.return_value = MagicMock()
             result = log.action_retry()
 
         self.assertEqual(log.state, "received")

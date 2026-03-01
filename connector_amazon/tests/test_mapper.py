@@ -32,7 +32,7 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
 
         with self.backend.work_on("amz.sale.order") as work:
             mapper = work.component(usage="import.mapper")
-            mapper.options = {}
+            mapper._options = {}
 
             with self.assertRaises(ValueError) as cm:
                 mapper.map_backend_and_shop(record)
@@ -45,7 +45,7 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
 
         with self.backend.work_on("amz.sale.order") as work:
             mapper = work.component(usage="import.mapper")
-            mapper.options = {"shop": self.shop}
+            mapper._options = {"shop": self.shop}
 
             result = mapper.map_backend_and_shop(record)
 
@@ -58,7 +58,7 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
 
         with self.backend.work_on("amz.sale.order") as work:
             mapper = work.component(usage="import.mapper")
-            mapper.options = {"shop": self.shop}
+            mapper._options = {"shop": self.shop}
 
             result = mapper.map_marketplace(record)
 
@@ -70,7 +70,7 @@ class TestAmazonOrderImportMapper(CommonConnectorAmazonSpapi):
 
         with self.backend.work_on("amz.sale.order") as work:
             mapper = work.component(usage="import.mapper")
-            mapper.options = {"shop": self.shop}
+            mapper._options = {"shop": self.shop}
 
             result = mapper.map_marketplace(record)
 
@@ -216,7 +216,7 @@ class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
 
         with self.backend.work_on("amz.sale.order.line") as work:
             mapper = work.component(usage="import.mapper")
-            mapper.options = {}
+            mapper._options = {}
 
             with self.assertRaises(ValueError) as cm:
                 mapper.map_order(record)
@@ -225,19 +225,13 @@ class TestAmazonOrderLineImportMapper(CommonConnectorAmazonSpapi):
 
     def test_map_order_success(self):
         """Test that amazon order is correctly mapped"""
-        amazon_order = self.env["amz.sale.order"].create(
-            {
-                "backend_id": self.backend.id,
-                "shop_id": self.shop.id,
-                "external_id": "TEST-ORDER-1",
-            }
-        )
+        amazon_order = self._create_amazon_order(external_id="TEST-ORDER-1")
 
         record = {}
 
         with self.backend.work_on("amz.sale.order.line") as work:
             mapper = work.component(usage="import.mapper")
-            mapper.options = {"amz_order": amazon_order}
+            mapper._options = {"amz_order": amazon_order}
 
             result = mapper.map_order(record)
 
@@ -252,6 +246,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "odoo_id": self.product.id,
                 "seller_sku": "TEST-PRICE-SKU-1",
                 "external_id": "TEST-PRODUCT-1",
             }
@@ -317,6 +312,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "odoo_id": self.product.id,
                 "seller_sku": "TEST-PRICE-SKU-2",
                 "external_id": "TEST-PRODUCT-2",
             }
@@ -343,6 +339,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "odoo_id": self.product.id,
                 "seller_sku": "TEST-PRICE-SKU-3",
                 "external_id": "TEST-PRODUCT-3",
             }
@@ -377,6 +374,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "odoo_id": self.product.id,
                 "seller_sku": "TEST-PRICE-SKU-4",
                 "external_id": "TEST-PRODUCT-4",
             }
@@ -421,6 +419,7 @@ class TestAmazonProductPriceImportMapper(CommonConnectorAmazonSpapi):
             {
                 "backend_id": self.backend.id,
                 "marketplace_id": self.marketplace.id,
+                "odoo_id": self.product.id,
                 "seller_sku": "TEST-PRICE-SKU-5",
                 "external_id": "TEST-PRODUCT-5",
             }

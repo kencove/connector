@@ -315,7 +315,9 @@ class TestOrderAdapterIntegration(common.CommonConnectorAmazonSpapi):
         self.order._sync_order_lines()
 
         # Should have called adapter method
-        mock_get_order_items.assert_called_once_with("111-1111111-1111111")
+        mock_get_order_items.assert_called_once_with(
+            "111-1111111-1111111", next_token=None
+        )
 
 
 @tagged("post_install", "-at_install")

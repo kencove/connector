@@ -234,13 +234,19 @@ class TestProcessNotification(CommonConnectorAmazonSpapi):
             "ORDER_CHANGE",
             payload={"AmazonOrderId": "ERROR-TEST"},
         )
-        # Mock handler to raise
+        # Mock handler to raise.  Use try/except instead of assertRaises
+        # because Odoo's assertRaises wraps in a savepoint that rolls back
+        # the error-state write.
+        raised = False
         with mock.patch.object(
             type(notif), "_handle_order_change", side_effect=RuntimeError("boom")
         ):
-            with self.assertRaises(RuntimeError):
+            try:
                 notif.process_notification()
+            except RuntimeError:
+                raised = True
 
+        self.assertTrue(raised)
         self.assertEqual(notif.state, "error")
         self.assertIn("boom", notif.error_message)
         self.assertEqual(notif.retry_count, 1)

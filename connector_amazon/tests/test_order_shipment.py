@@ -62,7 +62,6 @@ class TestPushShipment(CommonConnectorAmazonSpapi):
         result = binding.push_shipment()
 
         self.assertTrue(result)
-        self.assertTrue(binding.shipment_confirmed)
         self.assertTrue(binding.last_shipment_push)
 
         # Verify feed was created

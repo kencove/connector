@@ -324,6 +324,31 @@ class AmazonSaleOrder(models.Model):
 
         return binding
 
+    def _sync_order_from_api(self):
+        """Fetch latest order data from Amazon SP-API and update local record."""
+        self.ensure_one()
+        if not self.external_id:
+            return
+
+        try:
+            result = self.backend_id._call_sp_api(
+                "GET", f"/orders/v0/orders/{self.external_id}"
+            )
+        except Exception:
+            _logger.exception("Failed to sync order %s from API", self.external_id)
+            return
+
+        payload = result.get("payload") if isinstance(result, dict) else None
+        if not payload:
+            return
+
+        vals = {"last_sync": fields.Datetime.now()}
+        if payload.get("OrderStatus"):
+            vals["status"] = payload["OrderStatus"]
+        if payload.get("FulfillmentChannel"):
+            vals["fulfillment_channel"] = payload["FulfillmentChannel"]
+        self.write(vals)
+
     def _get_last_done_picking(self):
         """Return the most recent done picking for the bound sale order.
 
