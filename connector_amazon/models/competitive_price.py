@@ -15,7 +15,6 @@ class AmazonCompetitivePrice(models.Model):
 
     product_binding_id = fields.Many2one(
         comodel_name="amz.product.binding",
-        string="Product Binding",
         required=True,
         ondelete="cascade",
         index=True,
@@ -40,7 +39,6 @@ class AmazonCompetitivePrice(models.Model):
     )
     marketplace_id = fields.Many2one(
         comodel_name="amz.marketplace",
-        string="Marketplace",
         required=True,
         ondelete="restrict",
     )
@@ -67,7 +65,6 @@ class AmazonCompetitivePrice(models.Model):
     )
     currency_id = fields.Many2one(
         comodel_name="res.currency",
-        string="Currency",
         required=True,
         default=lambda self: self.env.company.currency_id,
     )

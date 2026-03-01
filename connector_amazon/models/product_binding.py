@@ -23,12 +23,11 @@ class AmazonProductBinding(models.Model):
     )
     backend_id = fields.Many2one(
         comodel_name="amz.backend",
-        string="Backend",
         required=True,
         ondelete="restrict",
     )
     marketplace_id = fields.Many2one(
-        comodel_name="amz.marketplace", string="Marketplace", ondelete="restrict"
+        comodel_name="amz.marketplace", ondelete="restrict"
     )
     external_id = fields.Char(string="External ID")
     seller_sku = fields.Char(string="Seller SKU", required=True)

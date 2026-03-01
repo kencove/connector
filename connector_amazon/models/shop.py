@@ -226,7 +226,10 @@ class AmazonShop(models.Model):
 
             return total_orders
         except Exception as e:
-            raise UserError(f"Failed to sync orders for {self.name}: {str(e)}") from e
+            raise UserError(
+                _("Failed to sync orders for %(name)s: %(error)s")
+                % {"name": self.name, "error": str(e)}
+            ) from e
 
     def action_sync_catalog(self):
         """Fetch Amazon listings and create/update product bindings"""
@@ -388,7 +391,7 @@ class AmazonShop(models.Model):
 
         except Exception as e:
             _logger.exception("Failed to sync catalog bulk for shop %s", self.name)
-            raise UserError(f"Bulk catalog sync failed: {str(e)}") from e
+            raise UserError(_("Bulk catalog sync failed: %s") % str(e)) from e
 
     def _process_listings_report(self, content):
         """Parse listings report TSV and create/update bindings.

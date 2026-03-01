@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
@@ -295,7 +295,7 @@ class AmazonBackend(models.Model):
 
             return data["access_token"]
         except Exception as e:
-            raise UserError(f"Failed to refresh LWA access token: {str(e)}") from e
+            raise UserError(_("Failed to refresh LWA access token: %s") % str(e)) from e
 
     def _get_access_token(self):
         """Get valid access token, refreshing if necessary"""
@@ -345,10 +345,11 @@ class AmazonBackend(models.Model):
             return response.json()
         except requests.exceptions.HTTPError as e:
             raise UserError(
-                f"SP-API HTTP Error: {e.response.status_code} - {e.response.text}"
+                _("SP-API HTTP Error: %(code)s - %(text)s")
+                % {"code": e.response.status_code, "text": e.response.text}
             ) from e
         except Exception as e:
-            raise UserError(f"SP-API Call Failed: {str(e)}") from e
+            raise UserError(_("SP-API Call Failed: %s") % str(e)) from e
 
     def action_test_connection(self):
         """Test SP-API connection by fetching marketplace participations"""
