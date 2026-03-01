@@ -150,26 +150,131 @@ class AmazonBackend(models.Model):
         ),
     )
 
-    # Amazon Hub Integration
-    hub_base_url = fields.Char(
-        string="Amazon Hub URL",
+    # Listing Enrichment Provider
+    enrichment_provider = fields.Selection(
+        selection=[
+            ("none", "None"),
+            ("amazon_hub", "Amazon Hub (Internal)"),
+            ("jungle_scout", "Jungle Scout"),
+            ("sellerapp", "SellerApp"),
+            ("smartscout", "SmartScout"),
+            ("keepa", "Keepa"),
+            ("datahawk", "DataHawk"),
+            ("rainforest", "Rainforest API"),
+            ("custom", "Custom"),
+        ],
+        default="none",
+        help="Service for listing quality analysis and optimization data.",
+    )
+    enrichment_base_url = fields.Char(
+        string="Enrichment API URL",
         help=(
-            "Base URL for the Amazon Hub listing analysis dashboard "
-            "(e.g., https://amazon-hub.kencove.com). Used to link products "
-            "to their AI analysis page."
+            "Base URL for the enrichment service. "
+            "Examples: https://amazon-hub.kencove.com, "
+            "https://developer.junglescout.com"
         ),
     )
-    hub_api_key = fields.Char(
-        string="Amazon Hub API Key",
-        help="API key for authenticated calls to the Amazon Hub REST API.",
+    enrichment_api_key = fields.Char(
+        string="Enrichment API Key",
         copy=False,
     )
-    hub_brand_slug = fields.Char(
+    enrichment_api_key_header = fields.Char(
+        string="API Key Header",
+        default="X-API-Key",
         help=(
-            "Brand slug used in the Amazon Hub (e.g., kencove, titan, powerfields). "
-            "Must match the slug in the Hub's brands table."
+            "HTTP header name for the API key. "
+            "X-API-Key (Hub, SmartScout), Authorization (Jungle Scout), "
+            "key (Keepa, DataHawk — query param)."
         ),
     )
+    enrichment_key_in_query = fields.Boolean(
+        string="Key as Query Param",
+        help="Send the API key as a query parameter instead of a header.",
+    )
+    enrichment_brand_id = fields.Char(
+        string="Brand / Account ID",
+        help=(
+            "Brand slug or account identifier for the enrichment provider. "
+            "Amazon Hub: brand slug (kencove, titan). "
+            "SmartScout: marketplace code."
+        ),
+    )
+    enrichment_lookup_template = fields.Char(
+        string="Lookup URL Template",
+        help=(
+            "URL template for product lookup. Placeholders: "
+            "{base_url}, {asin}, {sku}, {marketplace}, {brand}. "
+            "Example: {base_url}/api/v1/products/lookup?sku={sku}&brand={brand}"
+        ),
+    )
+    enrichment_dashboard_template = fields.Char(
+        string="Dashboard URL Template",
+        help=(
+            "URL template for opening a product in the browser. "
+            "Placeholders: {base_url}, {product_id}, {asin}, {sku}. "
+            "Example: {base_url}/products/{product_id}"
+        ),
+    )
+
+    @api.onchange("enrichment_provider")
+    def _onchange_enrichment_provider(self):
+        """Pre-fill URL templates and auth settings for known providers."""
+        defaults = {
+            "amazon_hub": {
+                "enrichment_api_key_header": "X-API-Key",
+                "enrichment_key_in_query": False,
+                "enrichment_lookup_template": (
+                    "{base_url}/api/v1/products/lookup" "?sku={sku}&brand={brand}"
+                ),
+                "enrichment_dashboard_template": ("{base_url}/products/{product_id}"),
+            },
+            "jungle_scout": {
+                "enrichment_base_url": "https://developer.junglescout.com",
+                "enrichment_api_key_header": "Authorization",
+                "enrichment_key_in_query": False,
+                "enrichment_lookup_template": (
+                    "{base_url}/api/keywords/keywords_by_asin"
+                    "?asin={asin}&marketplace={marketplace}"
+                ),
+            },
+            "sellerapp": {
+                "enrichment_api_key_header": "Authorization",
+                "enrichment_key_in_query": False,
+                "enrichment_lookup_template": (
+                    "{base_url}/v1/product/{asin}" "?marketplace={marketplace}"
+                ),
+            },
+            "smartscout": {
+                "enrichment_base_url": "https://api.smartscout.com",
+                "enrichment_api_key_header": "X-Api-Key",
+                "enrichment_key_in_query": False,
+            },
+            "keepa": {
+                "enrichment_base_url": "https://api.keepa.com",
+                "enrichment_api_key_header": "key",
+                "enrichment_key_in_query": True,
+                "enrichment_lookup_template": (
+                    "{base_url}/product?domain=1&asin={asin}&stats=30"
+                ),
+            },
+            "datahawk": {
+                "enrichment_base_url": "https://api.datahawk.co",
+                "enrichment_api_key_header": "key",
+                "enrichment_key_in_query": True,
+            },
+            "rainforest": {
+                "enrichment_base_url": "https://api.rainforestapi.com",
+                "enrichment_api_key_header": "api_key",
+                "enrichment_key_in_query": True,
+                "enrichment_lookup_template": (
+                    "{base_url}/request?type=product"
+                    "&asin={asin}&amazon_domain=amazon.com"
+                ),
+            },
+        }
+        vals = defaults.get(self.enrichment_provider, {})
+        for field_name, value in vals.items():
+            setattr(self, field_name, value)
 
     @api.depends("webhook_token")
     def _compute_webhook_url(self):

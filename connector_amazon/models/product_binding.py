@@ -148,78 +148,109 @@ class AmazonProductBinding(models.Model):
             },
         }
 
-    def action_view_hub_analysis(self):
-        """Open product analysis in the Amazon Hub dashboard.
+    def _build_enrichment_url(self, template):
+        """Format a URL template with product and backend context."""
+        backend = self.backend_id
+        base = (backend.enrichment_base_url or "").rstrip("/")
+        return template.format(
+            base_url=base,
+            asin=self.asin or "",
+            sku=self.seller_sku or "",
+            marketplace=self.marketplace_id.code if self.marketplace_id else "",
+            brand=backend.enrichment_brand_id or "",
+            product_id="{product_id}",  # deferred — filled after API call
+        )
 
-        Calls the Hub's /api/v1/products/lookup endpoint to resolve the
-        Hub product ID from the seller SKU and brand slug, then opens
-        the product detail page in a new browser tab.
+    def action_view_enrichment(self):
+        """Open product in the configured listing enrichment service.
+
+        Uses the backend's enrichment_lookup_template to call the
+        provider API, then opens the dashboard URL in a new tab.
+        Falls back to a search-based URL if the API call fails.
         """
         self.ensure_one()
-
         backend = self.backend_id
-        if not backend.hub_base_url:
+
+        if backend.enrichment_provider in (False, "none"):
             raise UserError(
                 _(
-                    "Amazon Hub URL is not configured on the backend. "
-                    "Go to Amazon SP-API \u2192 Backends \u2192 %(backend)s and set "
-                    "the 'Amazon Hub URL' field."
+                    "No listing enrichment provider configured. "
+                    "Go to Amazon SP-API \u2192 Backends \u2192 %(backend)s "
+                    "and select an enrichment provider."
                 )
                 % {"backend": backend.name}
             )
 
-        if not self.seller_sku:
-            raise UserError(_("This binding has no Seller SKU."))
+        if not backend.enrichment_base_url:
+            raise UserError(_("Enrichment API URL is not configured."))
 
-        hub_url = backend.hub_base_url.rstrip("/")
-        brand_slug = backend.hub_brand_slug or ""
+        base_url = backend.enrichment_base_url.rstrip("/")
 
-        # If we have an API key, call the lookup endpoint for an exact match
-        if backend.hub_api_key and brand_slug:
+        # Try API lookup if we have a template and API key
+        if backend.enrichment_lookup_template and backend.enrichment_api_key:
+            lookup_url = self._build_enrichment_url(backend.enrichment_lookup_template)
+            headers = {}
+            params = {}
+            key_header = backend.enrichment_api_key_header or "X-API-Key"
+            if backend.enrichment_key_in_query:
+                params[key_header] = backend.enrichment_api_key
+            else:
+                headers[key_header] = backend.enrichment_api_key
+
             try:
                 resp = requests.get(
-                    f"{hub_url}/api/v1/products/lookup",
-                    params={"sku": self.seller_sku, "brand": brand_slug},
-                    headers={"X-API-Key": backend.hub_api_key},
-                    timeout=10,
+                    lookup_url, headers=headers, params=params, timeout=10
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    dashboard_url = data.get("dashboard_url")
+                    # Try dashboard_url from response
+                    dashboard_url = data.get("dashboard_url") or data.get("url")
                     if dashboard_url:
                         return {
                             "type": "ir.actions.act_url",
                             "url": dashboard_url,
                             "target": "new",
                         }
-                    product_id = data.get("id")
-                    if product_id:
+                    # Try dashboard template with product_id
+                    pid = data.get("id") or data.get("product_id")
+                    if pid and backend.enrichment_dashboard_template:
+                        url = backend.enrichment_dashboard_template.format(
+                            base_url=base_url,
+                            product_id=pid,
+                            asin=self.asin or "",
+                            sku=self.seller_sku or "",
+                            marketplace=(
+                                self.marketplace_id.code if self.marketplace_id else ""
+                            ),
+                            brand=backend.enrichment_brand_id or "",
+                        )
                         return {
                             "type": "ir.actions.act_url",
-                            "url": f"{hub_url}/products/{product_id}",
+                            "url": url,
                             "target": "new",
                         }
                 elif resp.status_code == 404:
+                    identifier = self.asin or self.seller_sku
                     raise UserError(
-                        _(
-                            "Product with SKU '%(sku)s' not found in the "
-                            "Amazon Hub for brand '%(brand)s'."
-                        )
-                        % {"sku": self.seller_sku, "brand": brand_slug}
+                        _("Product '%(id)s' not found in %(provider)s.")
+                        % {
+                            "id": identifier,
+                            "provider": backend.enrichment_provider,
+                        }
                     )
                 else:
                     _logger.warning(
-                        "Hub lookup failed: %s %s",
+                        "Enrichment lookup failed: %s %s",
                         resp.status_code,
                         resp.text[:200],
                     )
             except requests.RequestException as exc:
-                _logger.warning("Hub API call failed: %s", exc)
+                _logger.warning("Enrichment API call failed: %s", exc)
 
-        # Fallback: open the products page with a search query
-        search_params = urlencode({"search": self.seller_sku})
+        # Fallback: open base URL with search query
+        search_params = urlencode({"search": self.asin or self.seller_sku})
         return {
             "type": "ir.actions.act_url",
-            "url": f"{hub_url}/products?{search_params}",
+            "url": f"{base_url}/products?{search_params}",
             "target": "new",
         }

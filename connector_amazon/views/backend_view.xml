@@ -101,13 +101,33 @@
                             <field name="notify_report_processing" />
                         </group>
                     </group>
-                    <group string="Amazon Hub Integration">
-                        <field
-                            name="hub_base_url"
-                            placeholder="https://amazon-hub.kencove.com"
-                        />
-                        <field name="hub_api_key" password="True" />
-                        <field name="hub_brand_slug" placeholder="kencove" />
+                    <group string="Listing Enrichment">
+                        <group>
+                            <field name="enrichment_provider" />
+                            <field
+                                name="enrichment_base_url"
+                                placeholder="https://amazon-hub.kencove.com"
+                                attrs="{'invisible': [('enrichment_provider', '=', 'none')]}"
+                            />
+                            <field
+                                name="enrichment_api_key"
+                                password="True"
+                                attrs="{'invisible': [('enrichment_provider', '=', 'none')]}"
+                            />
+                            <field
+                                name="enrichment_brand_id"
+                                placeholder="kencove"
+                                attrs="{'invisible': [('enrichment_provider', '=', 'none')]}"
+                            />
+                        </group>
+                        <group
+                            attrs="{'invisible': [('enrichment_provider', 'in', ('none', False))]}"
+                        >
+                            <field name="enrichment_api_key_header" />
+                            <field name="enrichment_key_in_query" />
+                            <field name="enrichment_lookup_template" />
+                            <field name="enrichment_dashboard_template" />
+                        </group>
                     </group>
                     <notebook>
                         <page string="Marketplaces">
